@@ -257,83 +257,74 @@ body{
   line-height:1.35;
   outline:none;
 }
-/* ===== FIX: Calendar back to square grid ===== */
+/* ===== HARD GRID OVERRIDE (id + !important) ===== */
 
-/* контейнер календаря на всю ширину */
-#calendarGrid{
-  width: 100%;
+#calendarGrid .cal-header{
+  display:grid !important;
+  grid-template-columns:repeat(7, 1fr) !important;
+  gap:10px !important;
+  width:100% !important;
 }
 
-/* заголовок дней недели */
-.cal-header{
-  display: grid !important;
-  grid-template-columns: repeat(7, minmax(140px, 1fr));
-  gap: 10px;
-  width: 100%;
+#calendarGrid .cal-header .cal-header-cell{
+  display:block !important;
+  text-align:center !important;
+  font-weight:800 !important;
+  padding:10px 8px !important;
+  border-radius:12px !important;
+  border:1px solid rgba(0,0,0,.12) !important;
+  background:rgba(255,255,255,.9) !important;
 }
 
-.cal-header-cell{
-  text-align: center;
-  font-weight: 800;
-  padding: 10px 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.9);
+#calendarGrid .cal-grid-body{
+  display:flex !important;
+  flex-direction:column !important;
+  gap:10px !important;
+  width:100% !important;
+  margin-top:10px !important;
 }
 
-/* тело календаря */
-.cal-grid-body{
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin-top: 10px;
+#calendarGrid .cal-grid-body .cal-row{
+  display:grid !important;
+  grid-template-columns:repeat(7, 1fr) !important;
+  gap:10px !important;
+  width:100% !important;
 }
 
-/* одна неделя = 7 колонок */
-.cal-row{
-  display: grid !important;
-  grid-template-columns: repeat(7, minmax(140px, 1fr));
-  gap: 10px;
-  width: 100%;
+#calendarGrid .cal-grid-body .cal-row .cal-cell{
+  display:flex !important;
+  flex-direction:column !important;
+  border:1px solid rgba(0,0,0,.12) !important;
+  border-radius:14px !important;
+  background:rgba(255,255,255,.9) !important;
+  padding:10px !important;
+  min-height:150px !important;
+  box-sizing:border-box !important;
 }
 
-/* ячейка дня (квадратик/карточка) */
-.cal-cell{
-  border: 1px solid rgba(0,0,0,.12);
-  border-radius: 14px;
-  background: rgba(255,255,255,.9);
-  padding: 10px;
-  min-height: 150px;
-  box-sizing: border-box;
+#calendarGrid .cal-cell.other-month{ opacity:.35 !important; }
+#calendarGrid .cal-cell.monday-closed{ opacity:.55 !important; }
+
+#calendarGrid .cal-cell .cal-top{
+  display:flex !important;
+  justify-content:space-between !important;
+  align-items:center !important;
+  margin-bottom:8px !important;
 }
 
-/* верхняя строка внутри дня (число + So) */
-.cal-top{
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+#calendarGrid .cal-cell .cal-btns{
+  display:grid !important;
+  grid-template-columns:repeat(2, 1fr) !important;
+  gap:8px !important;
+  margin-top:auto !important;
 }
 
-/* кнопки внутри дня */
-.cal-btns{
-  display: grid !important;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-top: auto;
+#calendarGrid .cal-cell .day-btn{
+  border:1px solid rgba(0,0,0,.12) !important;
+  border-radius:12px !important;
+  padding:8px 8px !important;
+  background:rgba(240,240,240,.95) !important;
+  cursor:pointer !important;
+  font-weight:700 !important;
+  font-size:12px !important;
 }
-
-.day-btn{
-  border: 1px solid rgba(0,0,0,.12);
-  border-radius: 12px;
-  padding: 8px 8px;
-  background: rgba(240,240,240,.95);
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 12px;
-}
-
-/* затемнение “других месяцев” и закрытых понедельников */
-.cal-cell.other-month{ opacity: .35; }
-.cal-cell.monday-closed{ opacity: .55; }
