@@ -1,11 +1,9 @@
 /* =========================================================
    Dienstplan – Museum (Browser)
-   app.js (FULL, fixed for your HTML ids)
-   - LocalStorage data
-   - Calendar UI
-   - Employee UI
-   - Plan text modal (Plan anzeigen)
-   - Robust modal close: X / button / overlay / ESC
+   app.js (FULL, FINAL FIX)
+   - Fixed for your index.html ids
+   - HARD modal hide/show (wins vs any CSS)
+   - Plan modal closes by X / button / overlay / ESC
    - Monday open dates
    - Export/Import JSON
    ========================================================= */
@@ -17,7 +15,6 @@
 ----------------------------- */
 const SHIFT_MINUTES = 7 * 60 + 30; // 7:30
 
-// statuses
 const STATUS = {
   NONE: "NONE",
   SCHLOSS: "SCHLOSS",
@@ -27,7 +24,6 @@ const STATUS = {
   AUSGL: "AUSGL",
 };
 
-// colors
 const COLORS = {
   BORDEAUX: "#800020",
   MOOS_GREEN: "#1B5428",
@@ -48,10 +44,7 @@ const LS_KEY = "dienstplan_museum_v1";
 ----------------------------- */
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-function byId(id) {
-  return document.getElementById(id);
-}
+const byId = (id) => document.getElementById(id);
 
 function safeOn(el, evt, fn) {
   if (!el) return;
@@ -63,18 +56,10 @@ function pad2(n) {
 }
 
 function isoDate(d) {
-  // d: Date
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function parseISO(s) {
-  // yyyy-mm-dd
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
 function weekdayMon0(dateObj) {
-  // JS: Sun=0..Sat=6. We want Mon=0..Sun=6
   const w = dateObj.getDay();
   return (w + 6) % 7;
 }
@@ -90,7 +75,6 @@ function isTuesday(dateObj) {
 }
 
 function monthNameDE(year, month1) {
-  // month1: 1..12
   const d = new Date(year, month1 - 1, 1);
   return d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
 }
@@ -108,13 +92,12 @@ function iterMonthDays(year, month1) {
 }
 
 function monthDatesCalendar(year, month1) {
-  // returns weeks: array of 7-date arrays (Mon..Sun)
   const first = new Date(year, month1 - 1, 1);
-  const startDow = weekdayMon0(first); // 0..6
+  const startDow = weekdayMon0(first);
   const start = new Date(first);
   start.setDate(first.getDate() - startDow);
 
-  const last = new Date(year, month1, 0); // last day of month
+  const last = new Date(year, month1, 0);
   const endDow = weekdayMon0(last);
   const end = new Date(last);
   end.setDate(last.getDate() + (6 - endDow));
@@ -152,10 +135,10 @@ function ampelColor(diffMinutes) {
 ----------------------------- */
 function defaultState() {
   return {
-    employees: [], // {id,name,weekly_minutes}
+    employees: [],
     plan: {
-      day_entries: {}, // { "YYYY-MM-DD": { empId: {status:"SCHLOSS"} } }
-      monday_open: [], // ["YYYY-MM-DD", ...]
+      day_entries: {},
+      monday_open: [],
     },
   };
 }
@@ -165,7 +148,7 @@ function loadState() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return defaultState();
     const obj = JSON.parse(raw);
-    if (!obj.plan) obj.plan = { day_entries: {}, monday_open: [] };
+    obj.plan ||= { day_entries: {}, monday_open: [] };
     obj.plan.day_entries ||= {};
     obj.plan.monday_open ||= [];
     obj.employees ||= [];
@@ -252,9 +235,7 @@ function statusIsWorking(st) {
    Targets / monthly stats
 ----------------------------- */
 function isDayOpen(dateObj) {
-  if (isMonday(dateObj)) {
-    return isMondayOpen(isoDate(dateObj));
-  }
+  if (isMonday(dateObj)) return isMondayOpen(isoDate(dateObj));
   return true;
 }
 
@@ -314,7 +295,7 @@ function twoMonthWindow(year, month1) {
 function sundaySlotsInMonth(year, month1) {
   let slots = 0;
   for (const d of iterMonthDays(year, month1)) {
-    if (isSunday(d)) slots += 2; // 2 workers each Sunday
+    if (isSunday(d)) slots += 2;
   }
   return slots;
 }
@@ -332,9 +313,7 @@ function actualSundaysInMonth(empId, year, month1) {
 
 function actualSundaysInWindow(empId, year, month1) {
   const [a, b] = twoMonthWindow(year, month1);
-  return (
-    actualSundaysInMonth(empId, a.y, a.m) + actualSundaysInMonth(empId, b.y, b.m)
-  );
+  return actualSundaysInMonth(empId, a.y, a.m) + actualSundaysInMonth(empId, b.y, b.m);
 }
 
 function expectedSundaysInWindow(empId, year, month1) {
@@ -342,8 +321,7 @@ function expectedSundaysInWindow(empId, year, month1) {
   const totalSlots = sundaySlotsInMonth(a.y, a.m) + sundaySlotsInMonth(b.y, b.m);
   if (totalSlots <= 0) return 0;
 
-  const weightsSum =
-    state.employees.reduce((s, e) => s + (e.weekly_minutes || 0), 0) || 1;
+  const weightsSum = state.employees.reduce((s, e) => s + (e.weekly_minutes || 0), 0) || 1;
   const emp = state.employees.find((e) => e.id === empId);
   if (!emp) return 0;
 
@@ -359,7 +337,7 @@ function hasSundayPreviousWeek(empId, dateObj) {
 
 function weekSunday(dateObj) {
   const d = new Date(dateObj);
-  const wd = weekdayMon0(d); // Mon=0..Sun=6
+  const wd = weekdayMon0(d);
   d.setDate(d.getDate() + (6 - wd));
   return d;
 }
@@ -370,7 +348,7 @@ function hasSundayInSameWeek(empId, dateObj) {
 }
 
 /* -----------------------------
-   Work streaks / weekly counts
+   Weekly / streak helpers
 ----------------------------- */
 function workedOnDay(empId, dateObj) {
   return statusIsWorking(getStatus(isoDate(dateObj), empId));
@@ -393,17 +371,13 @@ function consecutiveWorkDaysBefore(empId, dateObj) {
 }
 
 function isoWeekKey(dateObj) {
-  // ISO week calc (Mon-based)
   const d = new Date(dateObj);
   d.setHours(0, 0, 0, 0);
-  // Thursday in current week decides year
   d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
   const week1 = new Date(d.getFullYear(), 0, 4);
   const weekNo =
     1 +
-    Math.round(
-      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
-    );
+    Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
   return `${d.getFullYear()}-${weekNo}`;
 }
 
@@ -412,7 +386,7 @@ function weekWorkCount(empId, dateObj) {
   let cnt = 0;
 
   const start = new Date(dateObj);
-  start.setDate(start.getDate() - weekdayMon0(start)); // Monday of week
+  start.setDate(start.getDate() - weekdayMon0(start));
 
   for (let i = 0; i < 7; i++) {
     const day = new Date(start);
@@ -436,21 +410,19 @@ function creditShiftsInMonth(empId, year, month1) {
 }
 
 /* -----------------------------
-   AutoPlan
+   AutoPlan (unchanged logic)
 ----------------------------- */
 function autoplanMonth(year, month1) {
   if (!state.employees.length) return "Keine Mitarbeiter vorhanden.";
 
   const empIds = state.employees.map((e) => e.id);
 
-  // target shifts for month
   const targetsMonthShifts = {};
   for (const eid of empIds) {
     const tm = targetMinutesMonth(eid, year, month1);
     targetsMonthShifts[eid] = Math.round(tm / SHIFT_MINUTES);
   }
 
-  // "how far from target" using CREDIT shifts
   function monthDeltaShifts(eid) {
     const doneCredit = creditShiftsInMonth(eid, year, month1);
     return doneCredit - (targetsMonthShifts[eid] || 0);
@@ -476,41 +448,31 @@ function autoplanMonth(year, month1) {
     return w;
   }
 
-  // scoring
   function scoreCandidate(eid, dateObj, isSun) {
     const emp = state.employees.find((e) => e.id === eid);
     const weekly = emp?.weekly_minutes || 0;
 
     let s = 0.0;
 
-    const delta = monthDeltaShifts(eid); // >0 already above target
-    // fill those who are under target
+    const delta = monthDeltaShifts(eid);
     s += (-delta) * 120.0;
 
-    // cap over target to +1 shift (soft but very strong)
-    if (delta > 1) {
-      s -= 5000.0 + (delta - 1) * 500.0;
-    } else if (delta === 1) {
-      s -= 80.0;
-    }
+    if (delta > 1) s -= 5000.0 + (delta - 1) * 500.0;
+    else if (delta === 1) s -= 80.0;
 
-    // Weekly balance (work-based)
     const tw = targetShiftsWeek(weekly);
     const ww = weekWorkCount(eid, dateObj);
     if (ww > tw) s -= (ww - tw) * 60.0;
     else s += (tw - ww) * 10.0;
 
-    // Avoid long streaks
     const streak = consecutiveWorkDaysBefore(eid, dateObj);
     if (streak >= 4) s -= 9999.0;
     else if (streak === 3) s -= 400.0;
     else if (streak === 2) s -= 120.0;
     else if (streak === 1) s -= 40.0;
 
-    // tiny bonus for 2-day blocks
     if (streak === 1) s += 15.0;
 
-    // Tuesday penalty if had Sunday in same week
     if (!isSun && isTuesday(dateObj) && hasSundayInSameWeek(eid, dateObj)) {
       s -= 500.0;
     }
@@ -520,15 +482,12 @@ function autoplanMonth(year, month1) {
 
       const actual = actualSundaysInWindow(eid, year, month1);
       const expected = expectedSundaysInWindow(eid, year, month1);
-      const deficit = expected - actual;
-      s += deficit * 250.0;
+      s += (expected - actual) * 250.0;
 
       if (delta >= 2) s -= 200.0;
     }
 
-    // deterministic tiny tie-break
     s += (eid.charCodeAt(0) % 7) * 0.0001;
-
     return s;
   }
 
@@ -544,7 +503,6 @@ function autoplanMonth(year, month1) {
     const freeSlots = needWorkers - existing.length;
     if (freeSlots <= 0) continue;
 
-    // candidates are strictly NONE only
     const candidates = [];
     for (const eid of empIds) {
       if (getStatus(dayISO, eid) !== STATUS.NONE) continue;
@@ -555,8 +513,7 @@ function autoplanMonth(year, month1) {
     const scored = [];
     for (const eid of candidates) {
       if (isBlocked(dayISO, eid)) continue;
-      const sc = scoreCandidate(eid, d, isSunday(d));
-      scored.push([sc, eid]);
+      scored.push([scoreCandidate(eid, d, isSunday(d)), eid]);
     }
     if (!scored.length) continue;
 
@@ -573,97 +530,62 @@ function autoplanMonth(year, month1) {
 }
 
 /* -----------------------------
-   UI bindings (FIXED for your HTML ids)
+   UI bindings (your HTML ids)
 ----------------------------- */
 const UI = {
-  // employees
-  empNameInput:
-    byId("empNameInput") ||
-    byId("nameInput") ||
-    byId("employeeName") ||
-    byId("empName"),
-  addEmpBtn: byId("addEmpBtn") || byId("btnAddEmp") || byId("addEmployee"),
-  empList: byId("empList") || byId("employeesList") || byId("employeeList"),
+  empNameInput: byId("empName"),
+  addEmpBtn: byId("btnAddEmp"),
+  empList: byId("empList"),
 
-  // month navigation
-  prevMonthBtn: byId("prevMonthBtn") || byId("btnPrevMonth") || byId("btnPrev"),
-  nextMonthBtn: byId("nextMonthBtn") || byId("btnNextMonth") || byId("btnNext"),
-  monthLabel: byId("monthLabel") || byId("lblMonth") || byId("monthTitle"),
-  calendarGrid: byId("calendarGrid") || byId("calendar") || byId("calGrid"),
+  prevMonthBtn: byId("btnPrev"),
+  nextMonthBtn: byId("btnNext"),
+  monthLabel: byId("monthTitle"),
+  calendarGrid: byId("calendarGrid"),
 
-  // status bar text
-  statusBar: byId("statusBar") || byId("statusLabel") || byId("statusText"),
+  statusBar: byId("statusText"),
 
-  // top buttons
-  btnMondayOpen: byId("btnMondayOpen") || byId("mondayOpenBtn"),
-  btnPlan: byId("btnPlan") || byId("btnShowPlan"),
-  btnAutoplan: byId("btnAutoplan") || byId("btnAutoPlan"),
-  btnRefresh: byId("btnRefresh") || byId("btnAktualisieren"),
+  btnMondayOpen: byId("btnMondayOpen"),
+  btnPlan: byId("btnShowPlan"),
+  btnAutoplan: byId("btnAutoPlan"),
+  btnRefresh: byId("btnRefresh"),
 
-  btnExport: byId("btnExport") || byId("btnExportJSON"),
-  btnImport: byId("btnImport") || byId("btnImportJSON"),
-  fileImport: byId("fileImport") || byId("importFile") || byId("jsonFileInput"),
+  btnExport: byId("btnExport"),
+  btnImport: byId("btnImport"),
+  fileImport: byId("fileImport"),
 
-  // modals (your ids)
+  // Plan modal (your ids)
   planModal: byId("planModal"),
-  planText: byId("planText") || byId("planTextarea"),
-  planCloseX: byId("planCloseX") || byId("planModalCloseX") || byId("btnClosePlan"),
-  planCloseBtn:
-    byId("planCloseBtn") ||
-    byId("planModalCloseBtn") ||
-    byId("btnClosePlan2"),
-  planCopyBtn:
-    byId("planCopyBtn") || byId("planModalCopyBtn") || byId("btnCopyPlan"),
+  planText: byId("planText"),
+  planCloseX: byId("btnClosePlan"),
+  planCloseBtn: byId("btnClosePlan2"),
+  planCopyBtn: byId("btnCopyPlan"),
 
+  // Profile modal (your ids)
   profileModal: byId("profileModal"),
-  profileCloseX: byId("profileCloseX") || byId("btnCloseProfile"),
-  profileCloseBtn: byId("profileCloseBtn") || byId("btnCloseProfile2"),
+  profileCloseX: byId("btnCloseProfile"),
+  profileCloseBtn: byId("btnCloseProfile2"),
 };
 
-function warnMissingUI() {
-  const required = [
-    "empNameInput",
-    "addEmpBtn",
-    "empList",
-    "prevMonthBtn",
-    "nextMonthBtn",
-    "monthLabel",
-    "calendarGrid",
-    "btnPlan",
-    "btnAutoplan",
-    "btnRefresh",
-    "planModal",
-    "planText",
-  ];
-  const missing = required.filter((k) => !UI[k]);
-  if (missing.length) {
-    console.warn("Missing UI elements, check your HTML ids:", missing);
-  }
-}
-
 /* -----------------------------
-   Global state
------------------------------ */
-let state = loadState();
-let view = (() => {
-  const now = new Date();
-  return { year: now.getFullYear(), month1: now.getMonth() + 1 };
-})();
-let selectedEmpId = null;
-
-/* -----------------------------
-   Modal handling (IRON SAFE)
+   HARD modal hide/show (wins vs any CSS)
 ----------------------------- */
 function hide(el) {
   if (!el) return;
   el.classList.add("hidden");
   el.setAttribute("aria-hidden", "true");
+  el.style.display = "none"; // <— beats CSS
 }
+
 function show(el) {
   if (!el) return;
   el.classList.remove("hidden");
   el.setAttribute("aria-hidden", "false");
+  el.style.display = "flex"; // overlays are flex
 }
+
+// SAFETY: hide overlays ASAP (before init)
+hide(UI.planModal);
+hide(UI.profileModal);
 
 function closePlanModal() {
   hide(UI.planModal);
@@ -683,7 +605,7 @@ function closeProfile() {
 }
 
 /* -----------------------------
-   Build month plan text
+   Plan text builder
 ----------------------------- */
 function dayWorkers(dateObj) {
   const out = [];
@@ -696,15 +618,13 @@ function dayWorkers(dateObj) {
 
 function buildMonthPlanText(year, month1) {
   const wd = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-
   const lines = [];
+
   for (const d of iterMonthDays(year, month1)) {
     const iso = isoDate(d);
 
     if (isMonday(d) && !isMondayOpen(iso)) {
-      lines.push(
-        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): geschlossen`
-      );
+      lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): geschlossen`);
       continue;
     }
 
@@ -713,18 +633,16 @@ function buildMonthPlanText(year, month1) {
       lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): —`);
     } else {
       const parts = workers.map((w) => `${w.name} (${w.st === STATUS.SCHLOSS ? "S" : "B"})`);
-      lines.push(
-        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): ${parts.join(", ")}`
-      );
+      lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): ${parts.join(", ")}`);
     }
   }
 
-  const header = [
+  return [
     `Monat: ${monthNameDE(year, month1)}`,
     "Hinweis: Diese Ansicht zeigt nur die eingeteilten Dienste (S/B) als Tagesliste.",
     "",
-  ];
-  return header.concat(lines).join("\n");
+    ...lines,
+  ].join("\n");
 }
 
 /* -----------------------------
@@ -748,7 +666,6 @@ function renderEmployees() {
     btnName.className = "emp-name";
     btnName.textContent = emp.name;
     btnName.onclick = () => toggleSelectEmployee(emp.id);
-
     if (selectedEmpId === emp.id) btnName.classList.add("selected");
 
     const ampel = document.createElement("span");
@@ -760,7 +677,6 @@ function renderEmployees() {
     row.appendChild(btnTrash);
     row.appendChild(btnName);
     row.appendChild(ampel);
-
     UI.empList.appendChild(row);
   }
 }
@@ -770,6 +686,15 @@ function toggleSelectEmployee(empId) {
   renderEmployees();
   renderCalendar();
   setStatusText(selectedEmpId ? "Mitarbeiter ausgewählt." : "Kein Mitarbeiter ausgewählt.");
+}
+
+function parseWeekly(s) {
+  const m = String(s).trim().match(/^(\d{1,2})\s*:\s*(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (![0, 15, 30, 45].includes(mi)) return null;
+  return h * 60 + mi;
 }
 
 function addEmployee() {
@@ -798,15 +723,6 @@ function addEmployee() {
   setStatusText("Gespeichert.");
 }
 
-function parseWeekly(s) {
-  const m = String(s).trim().match(/^(\d{1,2})\s*:\s*(\d{2})$/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (![0, 15, 30, 45].includes(mi)) return null;
-  return h * 60 + mi;
-}
-
 function deleteEmployee(empId) {
   const emp = state.employees.find((e) => e.id === empId);
   if (!emp) return;
@@ -829,89 +745,6 @@ function deleteEmployee(empId) {
 /* -----------------------------
    Calendar UI
 ----------------------------- */
-function renderCalendar() {
-  if (!UI.calendarGrid || !UI.monthLabel) return;
-
-  UI.monthLabel.textContent = monthNameDE(view.year, view.month1);
-  UI.calendarGrid.innerHTML = "";
-
-  const weeks = monthDatesCalendar(view.year, view.month1);
-
-  const header = document.createElement("div");
-  header.className = "cal-header";
-  const headersFull = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-  for (const h of headersFull) {
-    const cell = document.createElement("div");
-    cell.className = "cal-header-cell";
-    cell.textContent = h;
-    header.appendChild(cell);
-  }
-  UI.calendarGrid.appendChild(header);
-
-  const grid = document.createElement("div");
-  grid.className = "cal-grid-body";
-  UI.calendarGrid.appendChild(grid);
-
-  for (const week of weeks) {
-    const row = document.createElement("div");
-    row.className = "cal-row";
-
-    for (const d of week) {
-      const dayISO = isoDate(d);
-      const inMonth = d.getMonth() === (view.month1 - 1);
-
-      const cell = document.createElement("div");
-      cell.className = "cal-cell";
-      if (!inMonth) cell.classList.add("other-month");
-
-      const top = document.createElement("div");
-      top.className = "cal-top";
-
-      const dayNum = document.createElement("div");
-      dayNum.className = "cal-daynum";
-      dayNum.textContent = d.getDate();
-
-      const soMark = document.createElement("div");
-      soMark.className = "cal-sunday-mark";
-      soMark.textContent = isSunday(d) ? "So" : "";
-
-      top.appendChild(dayNum);
-      top.appendChild(soMark);
-
-      const btns = document.createElement("div");
-      btns.className = "cal-btns";
-
-      const b1 = mkDayBtn("Schloss", () => setDayStatus(d, STATUS.SCHLOSS));
-      const b2 = mkDayBtn("Bürger", () => setDayStatus(d, STATUS.BUERGER));
-      const b3 = mkDayBtn("Krank", () => setDayStatus(d, STATUS.KRANK));
-      const b4 = mkDayBtn("Urlaub", () => setDayStatus(d, STATUS.URLAUB));
-      const b5 = mkDayBtn("Ausgl.", () => setDayStatus(d, STATUS.AUSGL));
-
-      btns.appendChild(b1);
-      btns.appendChild(b2);
-      btns.appendChild(b3);
-      btns.appendChild(b4);
-      btns.appendChild(b5);
-
-      if (isMonday(d) && !isMondayOpen(dayISO)) {
-        cell.classList.add("monday-closed");
-      }
-
-      cell.appendChild(top);
-      cell.appendChild(btns);
-
-      if (selectedEmpId && inMonth) {
-        const st = getStatus(dayISO, selectedEmpId);
-        paintCellByStatus(cell, st);
-      }
-
-      row.appendChild(cell);
-    }
-
-    grid.appendChild(row);
-  }
-}
-
 function mkDayBtn(label, onClick) {
   const b = document.createElement("button");
   b.className = "day-btn";
@@ -922,7 +755,6 @@ function mkDayBtn(label, onClick) {
 
 function paintCellByStatus(cell, st) {
   cell.style.setProperty("--cellColor", "");
-
   if (st === STATUS.SCHLOSS) cell.style.setProperty("--cellColor", COLORS.BORDEAUX);
   else if (st === STATUS.BUERGER) cell.style.setProperty("--cellColor", COLORS.MOOS_GREEN);
   else if (st === STATUS.KRANK) cell.style.setProperty("--cellColor", COLORS.KRANK_RED);
@@ -961,6 +793,79 @@ function setDayStatus(dateObj, status) {
   setStatusText("Geändert.");
 }
 
+function renderCalendar() {
+  if (!UI.calendarGrid || !UI.monthLabel) return;
+
+  UI.monthLabel.textContent = monthNameDE(view.year, view.month1);
+  UI.calendarGrid.innerHTML = "";
+
+  const weeks = monthDatesCalendar(view.year, view.month1);
+
+  const header = document.createElement("div");
+  header.className = "cal-header";
+  const headersFull = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+  for (const h of headersFull) {
+    const cell = document.createElement("div");
+    cell.className = "cal-header-cell";
+    cell.textContent = h;
+    header.appendChild(cell);
+  }
+  UI.calendarGrid.appendChild(header);
+
+  const grid = document.createElement("div");
+  grid.className = "cal-grid-body";
+  UI.calendarGrid.appendChild(grid);
+
+  for (const week of weeks) {
+    const row = document.createElement("div");
+    row.className = "cal-row";
+
+    for (const d of week) {
+      const dayISO = isoDate(d);
+      const inMonth = d.getMonth() === view.month1 - 1;
+
+      const cell = document.createElement("div");
+      cell.className = "cal-cell";
+      if (!inMonth) cell.classList.add("other-month");
+      if (isMonday(d) && !isMondayOpen(dayISO)) cell.classList.add("monday-closed");
+
+      const top = document.createElement("div");
+      top.className = "cal-top";
+
+      const dayNum = document.createElement("div");
+      dayNum.className = "cal-daynum";
+      dayNum.textContent = d.getDate();
+
+      const soMark = document.createElement("div");
+      soMark.className = "cal-sunday-mark";
+      soMark.textContent = isSunday(d) ? "So" : "";
+
+      top.appendChild(dayNum);
+      top.appendChild(soMark);
+
+      const btns = document.createElement("div");
+      btns.className = "cal-btns";
+
+      btns.appendChild(mkDayBtn("Schloss", () => setDayStatus(d, STATUS.SCHLOSS)));
+      btns.appendChild(mkDayBtn("Bürger", () => setDayStatus(d, STATUS.BUERGER)));
+      btns.appendChild(mkDayBtn("Krank", () => setDayStatus(d, STATUS.KRANK)));
+      btns.appendChild(mkDayBtn("Urlaub", () => setDayStatus(d, STATUS.URLAUB)));
+      btns.appendChild(mkDayBtn("Ausgl.", () => setDayStatus(d, STATUS.AUSGL)));
+
+      cell.appendChild(top);
+      cell.appendChild(btns);
+
+      if (selectedEmpId && inMonth) {
+        paintCellByStatus(cell, getStatus(dayISO, selectedEmpId));
+      }
+
+      row.appendChild(cell);
+    }
+
+    grid.appendChild(row);
+  }
+}
+
 /* -----------------------------
    Month navigation
 ----------------------------- */
@@ -991,37 +896,26 @@ function nextMonth() {
 }
 
 /* -----------------------------
-   Monday open dialog
+   Monday open prompt
 ----------------------------- */
 function mondayOpenPrompt() {
   const s = prompt("Montag öffnen – Datum eingeben (TT.MM.JJJJ):", "");
   if (s === null) return;
 
   const m = String(s).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!m) {
-    alert("Bitte Format TT.MM.JJJJ");
-    return;
-  }
+  if (!m) return alert("Bitte Format TT.MM.JJJJ");
 
   const dd = Number(m[1]);
   const mm = Number(m[2]);
   const yy = Number(m[3]);
 
   const d = new Date(yy, mm - 1, dd);
-  if (Number.isNaN(d.getTime())) {
-    alert("Ungültiges Datum.");
-    return;
-  }
-  if (!isMonday(d)) {
-    alert("Dieses Datum ist kein Montag.");
-    return;
-  }
+  if (Number.isNaN(d.getTime())) return alert("Ungültiges Datum.");
+  if (!isMonday(d)) return alert("Dieses Datum ist kein Montag.");
 
   const iso = isoDate(d);
   if (isMondayOpen(iso)) {
-    if (confirm("Montag ist bereits geöffnet. Entfernen?")) {
-      removeMondayOpen(iso);
-    }
+    if (confirm("Montag ist bereits geöffnet. Entfernen?")) removeMondayOpen(iso);
   } else {
     addMondayOpen(iso);
   }
@@ -1085,23 +979,27 @@ function setStatusText(s) {
 }
 
 /* -----------------------------
-   Init – prevent stuck modal
+   Init
 ----------------------------- */
+let state = loadState();
+let view = (() => {
+  const now = new Date();
+  return { year: now.getFullYear(), month1: now.getMonth() + 1 };
+})();
+let selectedEmpId = null;
+
 function initModalsIronSafe() {
-  // force-hide on startup
+  // (already hidden ASAP, but keep)
   hide(UI.planModal);
   hide(UI.profileModal);
 
-  // Plan close controls
   safeOn(UI.planCloseX, "click", closePlanModal);
   safeOn(UI.planCloseBtn, "click", closePlanModal);
 
-  // click overlay closes
   safeOn(UI.planModal, "click", (e) => {
     if (e.target === UI.planModal) closePlanModal();
   });
 
-  // copy
   safeOn(UI.planCopyBtn, "click", () => {
     if (!UI.planText) return;
     UI.planText.select();
@@ -1109,7 +1007,6 @@ function initModalsIronSafe() {
     setStatusText("Plan in Zwischenablage kopiert.");
   });
 
-  // Profile close controls
   safeOn(UI.profileCloseX, "click", closeProfile);
   safeOn(UI.profileCloseBtn, "click", closeProfile);
 
@@ -1117,7 +1014,6 @@ function initModalsIronSafe() {
     if (e.target === UI.profileModal) closeProfile();
   });
 
-  // ESC closes any open modal
   safeOn(document, "keydown", (e) => {
     if (e.key === "Escape") {
       closePlanModal();
@@ -1139,22 +1035,8 @@ function initUI() {
   safeOn(UI.btnPlan, "click", openPlanModal);
 
   safeOn(UI.btnAutoplan, "click", () => {
-    const ok = confirm(
-      `AutoPlan für ${monthNameDE(view.year, view.month1)} starten?\n\n` +
-        "Regeln:\n" +
-        "- Ergänzt nur leere Felder (NONE)\n" +
-        "- Respektiert manuelle Einträge und Krank/Urlaub/Ausgl.\n" +
-        "- Monatsziel nach Öffnungstagen (nicht ×4)\n" +
-        "- Sonntage fair im 2-Monats-Fenster (nach Stunden)\n" +
-        "- Keine Sonntage zwei Wochen in Folge (wenn möglich)\n" +
-        "- Dienstag nach Sonntag in derselben Woche wird gemieden\n" +
-        "- Keine Lieblingskandidaten: Strafpunkte für Serien\n" +
-        "- Ziel: möglichst grün/gelb\n" +
-        "- Überschreiten des Ziels > +1 Schicht wird hart bestraft\n" +
-        "- AutoPlan setzt SCHLOSS\n"
-    );
+    const ok = confirm(`AutoPlan für ${monthNameDE(view.year, view.month1)} starten?`);
     if (!ok) return;
-
     const res = autoplanMonth(view.year, view.month1);
     renderEmployees();
     renderCalendar();
@@ -1186,7 +1068,6 @@ function initUI() {
 }
 
 function init() {
-  warnMissingUI();
   initModalsIronSafe();
   initUI();
   renderEmployees();
@@ -1194,9 +1075,7 @@ function init() {
   setStatusText("Bereit.");
 }
 
-/* -----------------------------
-   Start (after DOM ready)
------------------------------ */
+// Start after DOM ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {
