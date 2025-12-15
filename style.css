@@ -1,330 +1,427 @@
+/* =========================================================
+   Dienstplan – Museum (Browser)  |  CLEAN style.css
+   - No conflicts with old calendar CSS
+   - Calendar is 7-column grid (squares)
+   - Modals: .modalOverlay.hidden always wins
+   ========================================================= */
+
 :root{
-  --bg:#F4F1EA;
-  --card:#FFFFFF;
-  --text:#1f1f1f;
-  --muted:#555;
-  --border:rgba(0,0,0,.10);
+  --bg: #f6f2ea;
+  --panel: rgba(255,255,255,.82);
+  --panel2: rgba(255,255,255,.92);
+  --border: rgba(0,0,0,.12);
+  --shadow: 0 10px 30px rgba(0,0,0,.08);
+  --text: #1a1a1a;
+  --muted: rgba(0,0,0,.55);
 
-  --bordeaux:#800020;
-  --green:#1B5428;
-  --krank:#D00000;
-  --urlaub:#2AA9E0;
-  --ausgl:#6E6E6E;
+  --btn-bg: rgba(255,255,255,.88);
+  --btn-bg2: rgba(245,245,245,.92);
+  --btn-hover: rgba(255,255,255,.98);
 
-  --ampelGreen:#2E7D32;
-  --ampelYellow:#F9A825;
-  --ampelRed:#C62828;
-  --ampelGray:#9E9E9E;
+  --radius: 16px;
+  --radius2: 14px;
+
+  --gap: 14px;
 }
 
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 body{
   margin:0;
-  font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
-  background: var(--bg);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   color: var(--text);
+  background: var(--bg);
 }
 
-.app{ min-height:100vh; display:flex; flex-direction:column; }
+/* ===== App frame ===== */
+.app{
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+}
 
 .topbar{
-  display:flex; gap:16px; align-items:center; justify-content:space-between;
-  padding:14px 16px;
-  border-bottom:1px solid var(--border);
-  background:rgba(255,255,255,.55);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.65);
   backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
-.title .h1{ font-weight:700; font-size:18px; }
-.title .sub{ color:var(--muted); font-size:12px; margin-top:2px; }
-.top-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+.title .h1{
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: .2px;
+}
+.title .sub{
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.top-actions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
 
 .main{
-  display:flex;
-  gap:12px;
-  padding:12px;
-  flex:1;
-  min-height:0;
+  display:grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--gap);
+  padding: 16px 18px;
 }
 
-.left{ width:360px; min-width:320px; display:flex; flex-direction:column; gap:12px; }
-.right{ flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
+/* ===== Left panel ===== */
+.left{
+  display:flex;
+  flex-direction:column;
+  gap: var(--gap);
+}
 
 .card{
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
 }
-.cardTitle{ font-weight:700; margin-bottom:10px; }
 
-.addRow{ display:flex; gap:8px; }
+.cardTitle{
+  font-weight: 900;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.muted{
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.addRow{
+  display:flex;
+  gap: 10px;
+  align-items:center;
+  margin-bottom: 12px;
+}
+
 .input{
-  width:100%;
-  padding:10px 10px;
-  border-radius:10px;
-  border:1px solid var(--border);
-  outline:none;
-  background:#fff;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.92);
+  outline: none;
+}
+.input:focus{
+  border-color: rgba(0,0,0,.22);
+  box-shadow: 0 0 0 4px rgba(0,0,0,.06);
 }
 
-.empList{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
-
-.empRow{
-  display:flex; align-items:center; gap:8px;
-  padding:8px;
-  border:1px solid var(--border);
-  border-radius:12px;
-  background:rgba(0,0,0,.02);
+/* employees list (created by app.js) */
+.empList{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
 }
-.empName{
+
+.emp-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.7);
+}
+
+.emp-trash{
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.emp-name{
   flex:1;
-  padding:9px 10px;
-  border-radius:12px;
-  border:1px solid var(--border);
-  background:#fff;
   text-align:left;
-  cursor:pointer;
-  font-size:14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.92);
+  border-radius: 12px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
 }
-.empName.selected{
-  outline:2px solid rgba(0,0,0,.18);
-  border-color:rgba(0,0,0,.18);
+.emp-name.selected{
+  border-color: rgba(0,0,0,.25);
+  box-shadow: 0 0 0 4px rgba(0,0,0,.06);
 }
-.ampelDot{
-  width:18px; height:18px; border-radius:5px;
-  border:1px solid rgba(0,0,0,.35);
-  background: var(--ampelGray);
+
+.emp-ampel{
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,.25);
+  background: #9e9e9e;
 }
-.muted{ color:var(--muted); font-size:13px; line-height:1.35; }
+
+/* ===== Buttons ===== */
+.btn{
+  border: 1px solid var(--border);
+  background: var(--btn-bg);
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 13px;
+  user-select:none;
+}
+.btn:hover{ background: var(--btn-hover); }
+.btn:active{ transform: translateY(1px); }
+
+.btn.small{
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+/* ===== Right panel ===== */
+.right{
+  display:flex;
+  flex-direction:column;
+  gap: var(--gap);
+}
 
 .monthbar{
-  display:flex; align-items:center; gap:8px;
-  background:rgba(255,255,255,.55);
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px;
+  display:flex;
+  align-items:center;
+  gap: 10px;
 }
-.monthTitle{ font-size:16px; font-weight:700; padding:0 6px; }
+
+.monthTitle{
+  font-weight: 900;
+  font-size: 14px;
+  padding: 0 6px;
+}
+
 .spacer{ flex:1; }
 
-.btn{
-  border:1px solid var(--border);
-  background:#fff;
-  border-radius:12px;
-  padding:10px 12px;
-  cursor:pointer;
-  font-weight:600;
-}
-.btn:hover{ filter:brightness(.98); }
-.btn.small{ padding:8px 10px; border-radius:10px; }
-
 .calendarWrap{
-  background:rgba(255,255,255,.55);
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:10px;
-  flex:1;
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.weekHeader{
-  display:grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap:8px;
-}
-.weekHeader .wh{
-  text-align:center;
-  font-weight:800;
-  padding:8px 6px;
-  border-radius:12px;
-  background:rgba(255,255,255,.8);
-  border:1px solid var(--border);
-}
-
-.calendarGrid{
-  display:grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap:8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px;
   overflow:auto;
-  padding-bottom:4px;
 }
 
-.dayCell{
-  background:#fff;
-  border:1px solid var(--border);
-  border-radius:14px;
-  padding:10px;
-  min-height:160px;
+/* IMPORTANT: calendarGrid itself must be a normal container */
+#calendarGrid{
+  display:block !important;
+  width: 100%;
+}
+
+/* Header of weekday names */
+.cal-header{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.cal-header-cell{
+  text-align:center;
+  font-weight: 900;
+  font-size: 12px;
+  padding: 10px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+}
+
+/* Body: list of week rows */
+.cal-grid-body{
   display:flex;
   flex-direction:column;
-}
-.dayTop{
-  display:flex; align-items:center; justify-content:space-between;
-  margin-bottom:8px;
-}
-.dayNum{
-  font-size:16px;
-  font-weight:800;
-}
-.dayHint{
-  font-size:12px;
-  color:var(--muted);
-  font-weight:700;
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
 }
 
-.btnGrid{
+.cal-row{
+  display:grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+/* Day cell */
+.cal-cell{
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255,255,255,.9);
+  padding: 10px;
+  min-height: 155px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+/* top line inside cell */
+.cal-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 8px;
+}
+.cal-daynum{
+  font-weight: 900;
+  font-size: 13px;
+}
+.cal-sunday-mark{
+  font-weight: 900;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* buttons inside cell */
+.cal-btns{
+  margin-top:auto;
   display:grid;
   grid-template-columns: repeat(2, 1fr);
-  gap:8px;
-  margin-top:auto;
+  gap: 8px;
 }
-.sbtn{
-  padding:10px 10px;
-  border-radius:12px;
-  border:1px solid var(--border);
-  background:#F1F1F1;
+
+.day-btn{
+  border: 1px solid var(--border);
+  background: var(--btn-bg2);
+  border-radius: 12px;
+  padding: 8px 8px;
   cursor:pointer;
-  font-weight:700;
-  font-size:12px;
+  font-weight: 800;
+  font-size: 12px;
 }
-.sbtn:active{ transform: translateY(1px); }
-.sbtn.empty{ visibility:hidden; }
+.day-btn:hover{ background: var(--btn-hover); }
+.day-btn:active{ transform: translateY(1px); }
 
+/* paint status from app.js (it sets background inline) */
+.cal-cell{
+  transition: background-color .15s ease, color .15s ease, opacity .15s ease;
+}
+.cal-cell.other-month{
+  opacity: .35;
+  filter: saturate(.75);
+}
+.cal-cell.monday-closed{
+  opacity: .55;
+}
+
+/* ===== Status bar ===== */
 .statusbar{
-  padding:10px 12px;
-  border:1px solid var(--border);
-  border-radius:14px;
-  background:rgba(255,255,255,.55);
-  color:var(--muted);
+  background: rgba(255,255,255,.55);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
-.hidden{ display:none; }
-
+/* ===== Modals ===== */
 .modalOverlay{
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.35);
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:16px;
+  padding: 18px;
+  z-index: 999;
 }
+
+/* CRITICAL: hidden must always win */
+.modalOverlay.hidden{
+  display:none !important;
+}
+
 .modal{
-  width:min(720px, 96vw);
-  background:#fff;
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.2);
-  box-shadow: 0 10px 40px rgba(0,0,0,.22);
+  width: min(820px, 96vw);
+  background: rgba(255,255,255,.95);
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 18px;
+  box-shadow: 0 18px 70px rgba(0,0,0,.25);
   overflow:hidden;
-  display:flex;
-  flex-direction:column;
-  max-height: min(86vh, 860px);
 }
-.modalWide{ width:min(980px, 98vw); }
+
+.modalWide{
+  width: min(1050px, 96vw);
+}
+
 .modalHeader{
   display:flex;
-  gap:10px;
   align-items:center;
-  padding:12px;
-  border-bottom:1px solid var(--border);
-  background:rgba(255,255,255,.9);
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.75);
 }
-.modalTitle{ font-weight:900; font-size:16px; }
+
+.modalTitle{
+  font-weight: 900;
+  font-size: 14px;
+}
+
 .modalBody{
-  padding:12px;
-  overflow:auto;
+  padding: 12px 14px;
 }
+
 .modalFooter{
   display:flex;
-  gap:10px;
   align-items:center;
-  padding:12px;
-  border-top:1px solid var(--border);
-  background:rgba(255,255,255,.9);
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(255,255,255,.75);
 }
+
 .textarea{
-  width:100%;
-  height:60vh;
-  padding:12px;
-  border-radius:14px;
-  border:1px solid var(--border);
+  width: 100%;
+  height: 62vh;
+  resize: none;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  padding: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size:13px;
-  line-height:1.35;
+  font-size: 12px;
+  background: rgba(255,255,255,.92);
   outline:none;
 }
-/* ===== HARD GRID OVERRIDE (id + !important) ===== */
-
-#calendarGrid .cal-header{
-  display:grid !important;
-  grid-template-columns:repeat(7, 1fr) !important;
-  gap:10px !important;
-  width:100% !important;
+.textarea:focus{
+  border-color: rgba(0,0,0,.22);
+  box-shadow: 0 0 0 4px rgba(0,0,0,.06);
 }
 
-#calendarGrid .cal-header .cal-header-cell{
-  display:block !important;
-  text-align:center !important;
-  font-weight:800 !important;
-  padding:10px 8px !important;
-  border-radius:12px !important;
-  border:1px solid rgba(0,0,0,.12) !important;
-  background:rgba(255,255,255,.9) !important;
-}
-
-#calendarGrid .cal-grid-body{
-  display:flex !important;
-  flex-direction:column !important;
-  gap:10px !important;
-  width:100% !important;
-  margin-top:10px !important;
-}
-
-#calendarGrid .cal-grid-body .cal-row{
-  display:grid !important;
-  grid-template-columns:repeat(7, 1fr) !important;
-  gap:10px !important;
-  width:100% !important;
-}
-
-#calendarGrid .cal-grid-body .cal-row .cal-cell{
-  display:flex !important;
-  flex-direction:column !important;
-  border:1px solid rgba(0,0,0,.12) !important;
-  border-radius:14px !important;
-  background:rgba(255,255,255,.9) !important;
-  padding:10px !important;
-  min-height:150px !important;
-  box-sizing:border-box !important;
-}
-
-#calendarGrid .cal-cell.other-month{ opacity:.35 !important; }
-#calendarGrid .cal-cell.monday-closed{ opacity:.55 !important; }
-
-#calendarGrid .cal-cell .cal-top{
-  display:flex !important;
-  justify-content:space-between !important;
-  align-items:center !important;
-  margin-bottom:8px !important;
-}
-
-#calendarGrid .cal-cell .cal-btns{
-  display:grid !important;
-  grid-template-columns:repeat(2, 1fr) !important;
-  gap:8px !important;
-  margin-top:auto !important;
-}
-
-#calendarGrid .cal-cell .day-btn{
-  border:1px solid rgba(0,0,0,.12) !important;
-  border-radius:12px !important;
-  padding:8px 8px !important;
-  background:rgba(240,240,240,.95) !important;
-  cursor:pointer !important;
-  font-weight:700 !important;
-  font-size:12px !important;
+/* ===== Responsive ===== */
+@media (max-width: 980px){
+  .main{ grid-template-columns: 1fr; }
+  .left{ order: 2; }
+  .right{ order: 1; }
+  .cal-header, .cal-row{
+    grid-template-columns: repeat(7, minmax(120px, 1fr));
+  }
 }
