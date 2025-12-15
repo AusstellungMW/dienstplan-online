@@ -1,6 +1,6 @@
 /* =========================================================
    Dienstplan – Museum (Browser)
-   app.js (full)
+   app.js (FULL, fixed for your HTML ids)
    - LocalStorage data
    - Calendar UI
    - Employee UI
@@ -148,7 +148,7 @@ function ampelColor(diffMinutes) {
 }
 
 /* -----------------------------
-   Data model (like your Python store)
+   Data model
 ----------------------------- */
 function defaultState() {
   return {
@@ -250,7 +250,6 @@ function statusIsWorking(st) {
 
 /* -----------------------------
    Targets / monthly stats
-   (NO ×4 bug, uses opening days)
 ----------------------------- */
 function isDayOpen(dateObj) {
   if (isMonday(dateObj)) {
@@ -436,17 +435,8 @@ function creditShiftsInMonth(empId, year, month1) {
   return c;
 }
 
-function workedShiftsInMonth(empId, year, month1) {
-  let c = 0;
-  for (const d of iterMonthDays(year, month1)) {
-    if (statusIsWorking(getStatus(isoDate(d), empId))) c += 1;
-  }
-  return c;
-}
-
 /* -----------------------------
-   AutoPlan (stabilizing, unpersönlich)
-   + NEW: cap over target to +1 shift (soft, "A)")
+   AutoPlan
 ----------------------------- */
 function autoplanMonth(year, month1) {
   if (!state.employees.length) return "Keine Mitarbeiter vorhanden.";
@@ -460,7 +450,7 @@ function autoplanMonth(year, month1) {
     targetsMonthShifts[eid] = Math.round(tm / SHIFT_MINUTES);
   }
 
-  // "how far from target" using CREDIT shifts (Urlaub/Krank/Ausgl keep ampel fair)
+  // "how far from target" using CREDIT shifts
   function monthDeltaShifts(eid) {
     const doneCredit = creditShiftsInMonth(eid, year, month1);
     return doneCredit - (targetsMonthShifts[eid] || 0);
@@ -494,16 +484,14 @@ function autoplanMonth(year, month1) {
     let s = 0.0;
 
     const delta = monthDeltaShifts(eid); // >0 already above target
-    // Strong: fill those who are under target
+    // fill those who are under target
     s += (-delta) * 120.0;
 
-    // A) cap over target to +1 shift (soft but very strong)
-    // delta = credit - target
-    // allow up to +1, punish > +1 extremely
+    // cap over target to +1 shift (soft but very strong)
     if (delta > 1) {
       s -= 5000.0 + (delta - 1) * 500.0;
     } else if (delta === 1) {
-      s -= 80.0; // slight reluctance
+      s -= 80.0;
     }
 
     // Weekly balance (work-based)
@@ -512,37 +500,33 @@ function autoplanMonth(year, month1) {
     if (ww > tw) s -= (ww - tw) * 60.0;
     else s += (tw - ww) * 10.0;
 
-    // Avoid long streaks (no favorites)
+    // Avoid long streaks
     const streak = consecutiveWorkDaysBefore(eid, dateObj);
     if (streak >= 4) s -= 9999.0;
     else if (streak === 3) s -= 400.0;
     else if (streak === 2) s -= 120.0;
     else if (streak === 1) s -= 40.0;
 
-    // tiny bonus for making 2-day blocks vs scattered (but not more)
+    // tiny bonus for 2-day blocks
     if (streak === 1) s += 15.0;
 
-    // Tuesday penalty if had Sunday in same week (soft preference, not law)
+    // Tuesday penalty if had Sunday in same week
     if (!isSun && isTuesday(dateObj) && hasSundayInSameWeek(eid, dateObj)) {
       s -= 500.0;
     }
 
     if (isSun) {
-      // no Sundays two weeks in a row (if possible)
       if (hasSundayPreviousWeek(eid, dateObj)) s -= 9999.0;
 
-      // fair Sundays in 2-month window by hours weights
       const actual = actualSundaysInWindow(eid, year, month1);
       const expected = expectedSundaysInWindow(eid, year, month1);
       const deficit = expected - actual;
       s += deficit * 250.0;
 
-      // if far above target already, discourage Sunday too
       if (delta >= 2) s -= 200.0;
     }
 
-    // small deterministic tie-breaker: stable order, not personal
-    // (prevents "random favorites" due to sort stability differences)
+    // deterministic tiny tie-break
     s += (eid.charCodeAt(0) % 7) * 0.0001;
 
     return s;
@@ -560,7 +544,7 @@ function autoplanMonth(year, month1) {
     const freeSlots = needWorkers - existing.length;
     if (freeSlots <= 0) continue;
 
-    // candidates are strictly NONE only (do not touch manual entries)
+    // candidates are strictly NONE only
     const candidates = [];
     for (const eid of empIds) {
       if (getStatus(dayISO, eid) !== STATUS.NONE) continue;
@@ -580,7 +564,6 @@ function autoplanMonth(year, month1) {
     const pick = scored.slice(0, freeSlots).map((x) => x[1]);
 
     for (const eid of pick) {
-      // AutoPlan sets SCHLOSS always (your rule)
       setStatus(dayISO, eid, STATUS.SCHLOSS);
       filled += 1;
     }
@@ -590,21 +573,28 @@ function autoplanMonth(year, month1) {
 }
 
 /* -----------------------------
-   UI bindings (IDs)
-   If your HTML uses other IDs, rename here.
+   UI bindings (FIXED for your HTML ids)
 ----------------------------- */
 const UI = {
-  empNameInput: byId("empNameInput") || byId("nameInput") || byId("employeeName"),
+  // employees
+  empNameInput:
+    byId("empNameInput") ||
+    byId("nameInput") ||
+    byId("employeeName") ||
+    byId("empName"),
   addEmpBtn: byId("addEmpBtn") || byId("btnAddEmp") || byId("addEmployee"),
   empList: byId("empList") || byId("employeesList") || byId("employeeList"),
 
-  prevMonthBtn: byId("prevMonthBtn") || byId("btnPrevMonth"),
-  nextMonthBtn: byId("nextMonthBtn") || byId("btnNextMonth"),
-  monthLabel: byId("monthLabel") || byId("lblMonth"),
+  // month navigation
+  prevMonthBtn: byId("prevMonthBtn") || byId("btnPrevMonth") || byId("btnPrev"),
+  nextMonthBtn: byId("nextMonthBtn") || byId("btnNextMonth") || byId("btnNext"),
+  monthLabel: byId("monthLabel") || byId("lblMonth") || byId("monthTitle"),
   calendarGrid: byId("calendarGrid") || byId("calendar") || byId("calGrid"),
 
-  statusBar: byId("statusBar") || byId("statusLabel"),
+  // status bar text
+  statusBar: byId("statusBar") || byId("statusLabel") || byId("statusText"),
 
+  // top buttons
   btnMondayOpen: byId("btnMondayOpen") || byId("mondayOpenBtn"),
   btnPlan: byId("btnPlan") || byId("btnShowPlan"),
   btnAutoplan: byId("btnAutoplan") || byId("btnAutoPlan"),
@@ -614,17 +604,20 @@ const UI = {
   btnImport: byId("btnImport") || byId("btnImportJSON"),
   fileImport: byId("fileImport") || byId("importFile") || byId("jsonFileInput"),
 
-  // modals
+  // modals (your ids)
   planModal: byId("planModal"),
   planText: byId("planText") || byId("planTextarea"),
-  planCloseX: byId("planCloseX") || byId("planModalCloseX"),
-  planCloseBtn: byId("planCloseBtn") || byId("planModalCloseBtn"),
-  planCopyBtn: byId("planCopyBtn") || byId("planModalCopyBtn"),
+  planCloseX: byId("planCloseX") || byId("planModalCloseX") || byId("btnClosePlan"),
+  planCloseBtn:
+    byId("planCloseBtn") ||
+    byId("planModalCloseBtn") ||
+    byId("btnClosePlan2"),
+  planCopyBtn:
+    byId("planCopyBtn") || byId("planModalCopyBtn") || byId("btnCopyPlan"),
 
-  // optional profile modal (if you have it)
   profileModal: byId("profileModal"),
-  profileCloseX: byId("profileCloseX"),
-  profileCloseBtn: byId("profileCloseBtn"),
+  profileCloseX: byId("profileCloseX") || byId("btnCloseProfile"),
+  profileCloseBtn: byId("profileCloseBtn") || byId("btnCloseProfile2"),
 };
 
 function warnMissingUI() {
@@ -644,10 +637,7 @@ function warnMissingUI() {
   ];
   const missing = required.filter((k) => !UI[k]);
   if (missing.length) {
-    console.warn(
-      "⚠️ Missing UI elements (check your HTML ids):",
-      missing
-    );
+    console.warn("Missing UI elements, check your HTML ids:", missing);
   }
 }
 
@@ -683,7 +673,6 @@ function openPlanModal() {
   if (!UI.planModal || !UI.planText) return;
   UI.planText.value = buildMonthPlanText(view.year, view.month1);
   show(UI.planModal);
-  // focus for usability
   try {
     UI.planText.focus();
   } catch (_) {}
@@ -694,7 +683,7 @@ function closeProfile() {
 }
 
 /* -----------------------------
-   Build month plan text (like Tk list view)
+   Build month plan text
 ----------------------------- */
 function dayWorkers(dateObj) {
   const out = [];
@@ -713,7 +702,9 @@ function buildMonthPlanText(year, month1) {
     const iso = isoDate(d);
 
     if (isMonday(d) && !isMondayOpen(iso)) {
-      lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): geschlossen`);
+      lines.push(
+        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): geschlossen`
+      );
       continue;
     }
 
@@ -722,7 +713,9 @@ function buildMonthPlanText(year, month1) {
       lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): —`);
     } else {
       const parts = workers.map((w) => `${w.name} (${w.st === STATUS.SCHLOSS ? "S" : "B"})`);
-      lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): ${parts.join(", ")}`);
+      lines.push(
+        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): ${parts.join(", ")}`
+      );
     }
   }
 
@@ -786,7 +779,6 @@ function addEmployee() {
     return;
   }
 
-  // simple prompt for weekly hours
   const raw = prompt("Wochenstunden (z.B. 20:00 oder 29:15):", "20:00");
   if (raw === null) return;
 
@@ -820,7 +812,6 @@ function deleteEmployee(empId) {
   if (!emp) return;
   if (!confirm(`${emp.name} wirklich löschen?`)) return;
 
-  // remove employee and any plan entries for them
   state.employees = state.employees.filter((e) => e.id !== empId);
   for (const dayISO of Object.keys(state.plan.day_entries || {})) {
     const mapping = state.plan.day_entries[dayISO];
@@ -837,7 +828,6 @@ function deleteEmployee(empId) {
 
 /* -----------------------------
    Calendar UI
-   (tries to match Tkinter look)
 ----------------------------- */
 function renderCalendar() {
   if (!UI.calendarGrid || !UI.monthLabel) return;
@@ -847,8 +837,6 @@ function renderCalendar() {
 
   const weeks = monthDatesCalendar(view.year, view.month1);
 
-  // optional: weekday header if your HTML doesn't have it already
-  // We add it here as first row for safety.
   const header = document.createElement("div");
   header.className = "cal-header";
   const headersFull = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -905,7 +893,6 @@ function renderCalendar() {
       btns.appendChild(b4);
       btns.appendChild(b5);
 
-      // monday closed hint
       if (isMonday(d) && !isMondayOpen(dayISO)) {
         cell.classList.add("monday-closed");
       }
@@ -913,7 +900,6 @@ function renderCalendar() {
       cell.appendChild(top);
       cell.appendChild(btns);
 
-      // paint selected employee status
       if (selectedEmpId && inMonth) {
         const st = getStatus(dayISO, selectedEmpId);
         paintCellByStatus(cell, st);
@@ -943,12 +929,13 @@ function paintCellByStatus(cell, st) {
   else if (st === STATUS.URLAUB) cell.style.setProperty("--cellColor", COLORS.URLAUB_BLUE);
   else if (st === STATUS.AUSGL) cell.style.setProperty("--cellColor", COLORS.AUSGL_GRAY);
 
-  // Your CSS should use --cellColor to paint background; if not,
-  // we do a direct fallback:
   if (st !== STATUS.NONE) {
     const col = cell.style.getPropertyValue("--cellColor");
     cell.style.background = col;
     cell.style.color = "#fff";
+  } else {
+    cell.style.background = "";
+    cell.style.color = "";
   }
 }
 
@@ -1004,7 +991,7 @@ function nextMonth() {
 }
 
 /* -----------------------------
-   Monday open dialog (simple prompt)
+   Monday open dialog
 ----------------------------- */
 function mondayOpenPrompt() {
   const s = prompt("Montag öffnen – Datum eingeben (TT.MM.JJJJ):", "");
@@ -1066,10 +1053,9 @@ function importJSONFromFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const obj = JSON.parse(String(reader.result || confirm));
+      const obj = JSON.parse(String(reader.result || ""));
       if (!obj || typeof obj !== "object") throw new Error("Bad JSON");
 
-      // validate minimal structure
       obj.employees ||= [];
       obj.plan ||= { day_entries: {}, monday_open: [] };
       obj.plan.day_entries ||= {};
@@ -1099,18 +1085,18 @@ function setStatusText(s) {
 }
 
 /* -----------------------------
-   Init – IMPORTANT: prevent stuck modal
+   Init – prevent stuck modal
 ----------------------------- */
 function initModalsIronSafe() {
-  // --- SAFETY: hide modals on startup (your bug) ---
+  // force-hide on startup
   hide(UI.planModal);
   hide(UI.profileModal);
 
-  // close controls
+  // Plan close controls
   safeOn(UI.planCloseX, "click", closePlanModal);
   safeOn(UI.planCloseBtn, "click", closePlanModal);
 
-  // click overlay to close
+  // click overlay closes
   safeOn(UI.planModal, "click", (e) => {
     if (e.target === UI.planModal) closePlanModal();
   });
@@ -1121,6 +1107,14 @@ function initModalsIronSafe() {
     UI.planText.select();
     document.execCommand("copy");
     setStatusText("Plan in Zwischenablage kopiert.");
+  });
+
+  // Profile close controls
+  safeOn(UI.profileCloseX, "click", closeProfile);
+  safeOn(UI.profileCloseBtn, "click", closeProfile);
+
+  safeOn(UI.profileModal, "click", (e) => {
+    if (e.target === UI.profileModal) closeProfile();
   });
 
   // ESC closes any open modal
@@ -1152,11 +1146,11 @@ function initUI() {
         "- Respektiert manuelle Einträge und Krank/Urlaub/Ausgl.\n" +
         "- Monatsziel nach Öffnungstagen (nicht ×4)\n" +
         "- Sonntage fair im 2-Monats-Fenster (nach Stunden)\n" +
-        "- Keine Sonntage zwei Wochen подряд (wenn möglich)\n" +
+        "- Keine Sonntage zwei Wochen in Folge (wenn möglich)\n" +
         "- Dienstag nach Sonntag in derselben Woche wird gemieden\n" +
         "- Keine Lieblingskandidaten: Strafpunkte für Serien\n" +
         "- Ziel: möglichst grün/gelb\n" +
-        "- NEU: Überschreiten des Ziels > +1 Schicht wird hart bestraft\n" +
+        "- Überschreiten des Ziels > +1 Schicht wird hart bestraft\n" +
         "- AutoPlan setzt SCHLOSS\n"
     );
     if (!ok) return;
@@ -1180,7 +1174,7 @@ function initUI() {
 
   safeOn(UI.btnImport, "click", () => {
     if (UI.fileImport) UI.fileImport.click();
-    else alert("Import: file input not found (id fileImport/importFile/jsonFileInput).");
+    else alert("Import: file input not found (id fileImport).");
   });
 
   safeOn(UI.fileImport, "change", (e) => {
@@ -1201,8 +1195,7 @@ function init() {
 }
 
 /* -----------------------------
-   Start
-   (Run after DOM ready to avoid your modal bug)
+   Start (after DOM ready)
 ----------------------------- */
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
