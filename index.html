@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dienstplan – Museum (Browser)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="title">
+        <div class="h1">Dienstplan – Museum (offline im Browser)</div>
+        <div class="sub">Speichert lokal (LocalStorage) + Export/Import JSON</div>
+      </div>
+
+      <div class="top-actions">
+        <button class="btn" id="btnMondayOpen">Montag öffnen…</button>
+        <button class="btn" id="btnExport">Export JSON</button>
+        <button class="btn" id="btnImport">Import JSON</button>
+        <input id="fileImport" type="file" accept="application/json" hidden />
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- LEFT -->
+      <aside class="left">
+        <div class="card">
+          <div class="cardTitle">Mitarbeiter</div>
+
+          <div class="addRow">
+            <input id="empName" class="input" placeholder="Name…" />
+            <button id="btnAddEmp" class="btn small">+</button>
+          </div>
+
+          <div id="empList" class="empList"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Hinweise</div>
+          <div class="muted">
+            - Klick auf Mitarbeiter → auswählen<br />
+            - Klick in Kalender auf Status-Button → setzt Status für ausgewählten Mitarbeiter<br />
+            - Nochmals klicken → löscht Status (NONE)
+          </div>
+        </div>
+      </aside>
+
+      <!-- RIGHT -->
+      <section class="right">
+        <div class="monthbar">
+          <button class="btn small" id="btnPrev">◀</button>
+          <div class="monthTitle" id="monthTitle">—</div>
+          <button class="btn small" id="btnNext">▶</button>
+
+          <div class="spacer"></div>
+
+          <button class="btn" id="btnShowPlan">Plan anzeigen</button>
+          <button class="btn" id="btnAutoPlan">AutoPlan (Monat)</button>
+          <button class="btn" id="btnRefresh">Aktualisieren</button>
+        </div>
+
+        <div class="calendarWrap">
+          <div class="weekHeader" id="weekHeader"></div>
+          <div class="calendarGrid" id="calendarGrid"></div>
+        </div>
+
+        <div class="statusbar">
+          <div id="statusText">Bereit.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: Profile -->
+  <div class="modalOverlay hidden" id="profileModal">
+    <div class="modal">
+      <div class="modalHeader">
+        <div class="modalTitle" id="profileTitle">Profil</div>
+        <button class="btn small" id="btnCloseProfile">✕</button>
+      </div>
+      <div class="modalBody" id="profileBody"></div>
+      <div class="modalFooter">
+        <button class="btn" id="btnChangeHours">Stunden ändern</button>
+        <div class="spacer"></div>
+        <button class="btn" id="btnCloseProfile2">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Month Plan List -->
+  <div class="modalOverlay hidden" id="planModal">
+    <div class="modal modalWide">
+      <div class="modalHeader">
+        <div class="modalTitle" id="planTitle">Plan anzeigen</div>
+        <button class="btn small" id="btnClosePlan">✕</button>
+      </div>
+      <div class="modalBody">
+        <textarea id="planText" class="textarea" spellcheck="false"></textarea>
+      </div>
+      <div class="modalFooter">
+        <button class="btn" id="btnCopyPlan">Als Text kopieren</button>
+        <div class="spacer"></div>
+        <button class="btn" id="btnClosePlan2">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
