@@ -1,1204 +1,1028 @@
-/* =========================================================
-   Dienstplan – Museum (Browser)
-   app.js (FULL, fixed for your HTML ids)
-   - LocalStorage data
-   - Calendar UI
-   - Employee UI
-   - Plan text modal (Plan anzeigen)
-   - Robust modal close: X / button / overlay / ESC
-   - Monday open dates
-   - Export/Import JSON
-   ========================================================= */
+/* =============================
+   Dienstplan – Browser Version
+   (Tkinter-ähnliches UI)
+   Speicher: LocalStorage + Export/Import
+============================= */
 
-"use strict";
+const BORDEAUX = "#800020";
+const MOOS_GREEN = "#1B5428";
+const KRANK_RED = "#D00000";
+const URLAUB_BLUE = "#2AA9E0";
+const AUSGL_GRAY = "#6E6E6E";
 
-/* -----------------------------
-   Config / constants
------------------------------ */
-const SHIFT_MINUTES = 7 * 60 + 30; // 7:30
+const AMPEL_GREEN = "#2E7D32";
+const AMPEL_YELLOW = "#F9A825";
+const AMPEL_RED = "#C62828";
+const AMPEL_GRAY = "#9E9E9E";
 
-// statuses
-const STATUS = {
-  NONE: "NONE",
-  SCHLOSS: "SCHLOSS",
-  BUERGER: "BUERGER",
-  KRANK: "KRANK",
-  URLAUB: "URLAUB",
-  AUSGL: "AUSGL",
-};
+const SHIFT_MINUTES = 7 * 60 + 30; // 450
 
-// colors
-const COLORS = {
-  BORDEAUX: "#800020",
-  MOOS_GREEN: "#1B5428",
-  KRANK_RED: "#D00000",
-  URLAUB_BLUE: "#2AA9E0",
-  AUSGL_GRAY: "#6E6E6E",
+const LS_KEY = "dienstplan_store_v1";
 
-  AMPEL_GREEN: "#2E7D32",
-  AMPEL_YELLOW: "#F9A825",
-  AMPEL_RED: "#C62828",
-  AMPEL_GRAY: "#9E9E9E",
-};
+/* ---------- Helpers ---------- */
+function pad2(n){ return String(n).padStart(2,"0"); }
 
-const LS_KEY = "dienstplan_museum_v1";
-
-/* -----------------------------
-   DOM helpers
------------------------------ */
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-function byId(id) {
-  return document.getElementById(id);
-}
-
-function safeOn(el, evt, fn) {
-  if (!el) return;
-  el.addEventListener(evt, fn);
-}
-
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-
-function isoDate(d) {
-  // d: Date
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function parseISO(s) {
-  // yyyy-mm-dd
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function weekdayMon0(dateObj) {
-  // JS: Sun=0..Sat=6. We want Mon=0..Sun=6
-  const w = dateObj.getDay();
-  return (w + 6) % 7;
-}
-
-function isSunday(dateObj) {
-  return weekdayMon0(dateObj) === 6;
-}
-function isMonday(dateObj) {
-  return weekdayMon0(dateObj) === 0;
-}
-function isTuesday(dateObj) {
-  return weekdayMon0(dateObj) === 1;
-}
-
-function monthNameDE(year, month1) {
-  // month1: 1..12
-  const d = new Date(year, month1 - 1, 1);
-  return d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
-}
-
-function iterMonthDays(year, month1) {
-  const first = new Date(year, month1 - 1, 1);
-  const out = [];
-  const m = first.getMonth();
-  let cur = new Date(first);
-  while (cur.getMonth() === m) {
-    out.push(new Date(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-  return out;
-}
-
-function monthDatesCalendar(year, month1) {
-  // returns weeks: array of 7-date arrays (Mon..Sun)
-  const first = new Date(year, month1 - 1, 1);
-  const startDow = weekdayMon0(first); // 0..6
-  const start = new Date(first);
-  start.setDate(first.getDate() - startDow);
-
-  const last = new Date(year, month1, 0); // last day of month
-  const endDow = weekdayMon0(last);
-  const end = new Date(last);
-  end.setDate(last.getDate() + (6 - endDow));
-
-  const weeks = [];
-  let cur = new Date(start);
-  while (cur <= end) {
-    const week = [];
-    for (let i = 0; i < 7; i++) {
-      week.push(new Date(cur));
-      cur.setDate(cur.getDate() + 1);
-    }
-    weeks.push(week);
-  }
-  return weeks;
-}
-
-function minutesToHHMM(m) {
+function minutesToHHMM(m){
   const sign = m < 0 ? "-" : "";
   m = Math.abs(m);
-  const h = Math.floor(m / 60);
+  const h = Math.floor(m/60);
   const mi = m % 60;
   return `${sign}${h}:${pad2(mi)}`;
 }
 
-function ampelColor(diffMinutes) {
-  const ad = Math.abs(diffMinutes);
-  if (ad <= SHIFT_MINUTES) return COLORS.AMPEL_GREEN;
-  if (ad <= 2 * SHIFT_MINUTES) return COLORS.AMPEL_YELLOW;
-  return COLORS.AMPEL_RED;
+function parseDEDate(s){
+  const t = (s||"").trim();
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(t);
+  if(!m) return null;
+  const dd = Number(m[1]), mm = Number(m[2]), yy = Number(m[3]);
+  const d = new Date(yy, mm-1, dd);
+  if(d.getFullYear() !== yy || d.getMonth() !== mm-1 || d.getDate() !== dd) return null;
+  return d;
 }
 
-/* -----------------------------
-   Data model
------------------------------ */
-function defaultState() {
-  return {
-    employees: [], // {id,name,weekly_minutes}
-    plan: {
-      day_entries: {}, // { "YYYY-MM-DD": { empId: {status:"SCHLOSS"} } }
-      monday_open: [], // ["YYYY-MM-DD", ...]
-    },
-  };
+function isoDate(d){
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth()+1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day}`;
 }
 
-function loadState() {
-  try {
+function fromISO(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if(!m) return null;
+  return new Date(Number(m[1]), Number(m[2])-1, Number(m[3]));
+}
+
+function isSunday(d){ return d.getDay() === 0; }  // JS: Sun=0
+function isMonday(d){ return d.getDay() === 1; }
+function isTuesday(d){ return d.getDay() === 2; }
+
+function monthNameDE(year, month1to12){
+  const d = new Date(year, month1to12-1, 1);
+  return d.toLocaleDateString("de-DE", {month:"long", year:"numeric"});
+}
+
+function daysInMonth(year, month1to12){
+  return new Date(year, month1to12, 0).getDate();
+}
+
+function* iterMonthDays(year, month1to12){
+  const last = daysInMonth(year, month1to12);
+  for(let day=1; day<=last; day++){
+    yield new Date(year, month1to12-1, day);
+  }
+}
+
+/* ISO week key: (isoYear, isoWeek) */
+function isoWeekKey(date){
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // Mon=1..Sun=7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear,0,1));
+  const isoWeek = Math.ceil((((d - yearStart)/86400000) + 1) / 7);
+  return `${isoYear}-${pad2(isoWeek)}`;
+}
+
+function weekSunday(date){
+  // Sunday of same Mon..Sun week
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const jsDay = d.getDay(); // Sun=0..Sat=6
+  const weekdayMon0 = (jsDay + 6) % 7; // Mon=0..Sun=6
+  const delta = 6 - weekdayMon0;
+  d.setDate(d.getDate() + delta);
+  return d;
+}
+
+/* ---------- DataStore ---------- */
+class DataStore {
+  constructor(){
+    this.employees = [];
+    this.plan = { day_entries:{}, monday_open:[] };
+    this.load();
+  }
+
+  load(){
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return defaultState();
-    const obj = JSON.parse(raw);
-    if (!obj.plan) obj.plan = { day_entries: {}, monday_open: [] };
-    obj.plan.day_entries ||= {};
-    obj.plan.monday_open ||= [];
-    obj.employees ||= [];
-    return obj;
-  } catch (e) {
-    console.error("Load state failed:", e);
-    return defaultState();
+    if(raw){
+      try{
+        const obj = JSON.parse(raw);
+        this.employees = Array.isArray(obj.employees) ? obj.employees : [];
+        this.plan = obj.plan && typeof obj.plan === "object" ? obj.plan : {day_entries:{}, monday_open:[]};
+      }catch{
+        this.employees = [];
+        this.plan = { day_entries:{}, monday_open:[] };
+      }
+    }
+    this.plan.day_entries ??= {};
+    this.plan.monday_open ??= [];
+  }
+
+  save(){
+    localStorage.setItem(LS_KEY, JSON.stringify({employees:this.employees, plan:this.plan}, null, 2));
+  }
+
+  makeId(name){
+    let t = (name||"").toLowerCase().replace(/[^a-z0-9 _-]/g,"").trim().replace(/\s+/g,"_");
+    if(!t) t = "mitarbeiter";
+    return t.slice(0,24);
+  }
+
+  addEmployee(name, weekly_minutes){
+    let id = this.makeId(name);
+    const base = id;
+    let i = 2;
+    while(this.employees.some(e => e.id === id)){
+      id = `${base}${i}`;
+      i++;
+    }
+    this.employees.push({id, name, weekly_minutes});
+    this.save();
+    return id;
+  }
+
+  updateEmployeeHours(id, weekly_minutes){
+    const e = this.employees.find(x=>x.id===id);
+    if(!e) return;
+    e.weekly_minutes = weekly_minutes;
+    this.save();
+  }
+
+  deleteEmployee(id){
+    this.employees = this.employees.filter(e=>e.id!==id);
+    const de = this.plan.day_entries || {};
+    for(const dayIso of Object.keys(de)){
+      if(de[dayIso] && de[dayIso][id]){
+        delete de[dayIso][id];
+        if(Object.keys(de[dayIso]).length === 0) delete de[dayIso];
+      }
+    }
+    this.save();
+  }
+
+  setStatus(dayIso, empId, status){
+    this.plan.day_entries ??= {};
+    this.plan.day_entries[dayIso] ??= {};
+    this.plan.day_entries[dayIso][empId] = {status};
+    this.save();
+  }
+
+  clearStatus(dayIso, empId){
+    const de = this.plan.day_entries || {};
+    if(de[dayIso] && de[dayIso][empId]){
+      delete de[dayIso][empId];
+      if(Object.keys(de[dayIso]).length===0) delete de[dayIso];
+      this.save();
+    }
+  }
+
+  getStatus(dayIso, empId){
+    const m = this.plan.day_entries?.[dayIso];
+    return m?.[empId]?.status ?? "NONE";
+  }
+
+  isMondayOpen(dayIso){
+    return (this.plan.monday_open || []).includes(dayIso);
+  }
+  addMondayOpen(dayIso){
+    this.plan.monday_open ??= [];
+    if(!this.plan.monday_open.includes(dayIso)){
+      this.plan.monday_open.push(dayIso);
+      this.plan.monday_open.sort();
+      this.save();
+    }
+  }
+  removeMondayOpen(dayIso){
+    this.plan.monday_open ??= [];
+    const i = this.plan.monday_open.indexOf(dayIso);
+    if(i>=0){
+      this.plan.monday_open.splice(i,1);
+      this.save();
+    }
   }
 }
 
-function saveState() {
-  localStorage.setItem(LS_KEY, JSON.stringify(state));
-}
-
-function makeId(name) {
-  let t = (name || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9 _-]/g, "")
-    .trim()
-    .replace(/\s+/g, "_");
-  if (!t) t = "mitarbeiter";
-  t = t.slice(0, 24);
-  let base = t;
-  let i = 2;
-  while (state.employees.some((e) => e.id === t)) {
-    t = `${base}${i}`;
-    i++;
-  }
-  return t;
-}
-
-function getStatus(dayISO, empId) {
-  return state.plan.day_entries?.[dayISO]?.[empId]?.status || STATUS.NONE;
-}
-
-function setStatus(dayISO, empId, status) {
-  state.plan.day_entries ||= {};
-  state.plan.day_entries[dayISO] ||= {};
-  state.plan.day_entries[dayISO][empId] = { status };
-  saveState();
-}
-
-function clearStatus(dayISO, empId) {
-  const m = state.plan.day_entries?.[dayISO];
-  if (m && m[empId]) delete m[empId];
-  if (m && Object.keys(m).length === 0) delete state.plan.day_entries[dayISO];
-  saveState();
-}
-
-function isMondayOpen(dayISO) {
-  return (state.plan.monday_open || []).includes(dayISO);
-}
-
-function addMondayOpen(dayISO) {
-  state.plan.monday_open ||= [];
-  if (!state.plan.monday_open.includes(dayISO)) {
-    state.plan.monday_open.push(dayISO);
-    state.plan.monday_open.sort();
-    saveState();
-  }
-}
-
-function removeMondayOpen(dayISO) {
-  state.plan.monday_open ||= [];
-  state.plan.monday_open = state.plan.monday_open.filter((x) => x !== dayISO);
-  saveState();
-}
-
-function statusCountsAsCredit(st) {
-  return (
-    st === STATUS.SCHLOSS ||
-    st === STATUS.BUERGER ||
-    st === STATUS.URLAUB ||
-    st === STATUS.KRANK ||
-    st === STATUS.AUSGL
-  );
-}
-
-function statusIsWorking(st) {
-  return st === STATUS.SCHLOSS || st === STATUS.BUERGER;
-}
-
-/* -----------------------------
-   Targets / monthly stats
------------------------------ */
-function isDayOpen(dateObj) {
-  if (isMonday(dateObj)) {
-    return isMondayOpen(isoDate(dateObj));
+/* ---------- Fair calculations ---------- */
+function isDayOpen(store, d){
+  if(isMonday(d)){
+    return store.isMondayOpen(isoDate(d));
   }
   return true;
 }
 
-function openDaysInMonth(year, month1) {
-  return iterMonthDays(year, month1).filter((d) => isDayOpen(d)).length;
-}
-
-function targetMinutesMonth(empId, year, month1) {
-  const emp = state.employees.find((e) => e.id === empId);
-  if (!emp) return 0;
-  const od = openDaysInMonth(year, month1);
-  return Math.round(emp.weekly_minutes * (od / 7.0));
-}
-
-function calcEmployeeMonthStats(empId, year, month1) {
-  const soll = targetMinutesMonth(empId, year, month1);
-  let ist = 0;
-  let sonntage = 0;
-
-  for (const d of iterMonthDays(year, month1)) {
-    const st = getStatus(isoDate(d), empId);
-    if (statusCountsAsCredit(st)) ist += SHIFT_MINUTES;
-    if (isSunday(d) && statusIsWorking(st)) sonntage += 1;
-  }
-  return { soll, ist, diff: ist - soll, sonntage };
-}
-
-/* -----------------------------
-   Sunday fairness window (2-month)
------------------------------ */
-function twoMonthWindow(year, month1) {
-  if (month1 % 2 === 1) {
-    let y2 = year,
-      m2 = month1 + 1;
-    if (m2 === 13) {
-      m2 = 1;
-      y2 += 1;
-    }
-    return [
-      { y: year, m: month1 },
-      { y: y2, m: m2 },
-    ];
-  } else {
-    let y1 = year,
-      m1 = month1 - 1;
-    if (m1 === 0) {
-      m1 = 12;
-      y1 -= 1;
-    }
-    return [
-      { y: y1, m: m1 },
-      { y: year, m: month1 },
-    ];
-  }
-}
-
-function sundaySlotsInMonth(year, month1) {
-  let slots = 0;
-  for (const d of iterMonthDays(year, month1)) {
-    if (isSunday(d)) slots += 2; // 2 workers each Sunday
-  }
-  return slots;
-}
-
-function actualSundaysInMonth(empId, year, month1) {
-  let cnt = 0;
-  for (const d of iterMonthDays(year, month1)) {
-    if (isSunday(d)) {
-      const st = getStatus(isoDate(d), empId);
-      if (statusIsWorking(st)) cnt += 1;
-    }
-  }
-  return cnt;
-}
-
-function actualSundaysInWindow(empId, year, month1) {
-  const [a, b] = twoMonthWindow(year, month1);
-  return (
-    actualSundaysInMonth(empId, a.y, a.m) + actualSundaysInMonth(empId, b.y, b.m)
-  );
-}
-
-function expectedSundaysInWindow(empId, year, month1) {
-  const [a, b] = twoMonthWindow(year, month1);
-  const totalSlots = sundaySlotsInMonth(a.y, a.m) + sundaySlotsInMonth(b.y, b.m);
-  if (totalSlots <= 0) return 0;
-
-  const weightsSum =
-    state.employees.reduce((s, e) => s + (e.weekly_minutes || 0), 0) || 1;
-  const emp = state.employees.find((e) => e.id === empId);
-  if (!emp) return 0;
-
-  return totalSlots * ((emp.weekly_minutes || 0) / weightsSum);
-}
-
-function hasSundayPreviousWeek(empId, dateObj) {
-  const prev = new Date(dateObj);
-  prev.setDate(prev.getDate() - 7);
-  if (!isSunday(prev)) return false;
-  return statusIsWorking(getStatus(isoDate(prev), empId));
-}
-
-function weekSunday(dateObj) {
-  const d = new Date(dateObj);
-  const wd = weekdayMon0(d); // Mon=0..Sun=6
-  d.setDate(d.getDate() + (6 - wd));
-  return d;
-}
-
-function hasSundayInSameWeek(empId, dateObj) {
-  const sun = weekSunday(dateObj);
-  return statusIsWorking(getStatus(isoDate(sun), empId));
-}
-
-/* -----------------------------
-   Work streaks / weekly counts
------------------------------ */
-function workedOnDay(empId, dateObj) {
-  return statusIsWorking(getStatus(isoDate(dateObj), empId));
-}
-
-function consecutiveWorkDaysBefore(empId, dateObj) {
-  let cnt = 0;
-  const cur = new Date(dateObj);
-  cur.setDate(cur.getDate() - 1);
-
-  while (true) {
-    if (!isDayOpen(cur)) break;
-    if (workedOnDay(empId, cur)) {
-      cnt += 1;
-      cur.setDate(cur.getDate() - 1);
-      if (cnt >= 10) break;
-    } else break;
-  }
-  return cnt;
-}
-
-function isoWeekKey(dateObj) {
-  // ISO week calc (Mon-based)
-  const d = new Date(dateObj);
-  d.setHours(0, 0, 0, 0);
-  // Thursday in current week decides year
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-  const week1 = new Date(d.getFullYear(), 0, 4);
-  const weekNo =
-    1 +
-    Math.round(
-      ((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7
-    );
-  return `${d.getFullYear()}-${weekNo}`;
-}
-
-function weekWorkCount(empId, dateObj) {
-  const key = isoWeekKey(dateObj);
-  let cnt = 0;
-
-  const start = new Date(dateObj);
-  start.setDate(start.getDate() - weekdayMon0(start)); // Monday of week
-
-  for (let i = 0; i < 7; i++) {
-    const day = new Date(start);
-    day.setDate(start.getDate() + i);
-    if (isoWeekKey(day) !== key) continue;
-    if (statusIsWorking(getStatus(isoDate(day), empId))) cnt += 1;
-  }
-  return cnt;
-}
-
-function targetShiftsWeek(weeklyMinutes) {
-  return Math.round((weeklyMinutes || 0) / SHIFT_MINUTES);
-}
-
-function creditShiftsInMonth(empId, year, month1) {
+function openDaysInMonth(store, year, month){
   let c = 0;
-  for (const d of iterMonthDays(year, month1)) {
-    if (statusCountsAsCredit(getStatus(isoDate(d), empId))) c += 1;
+  for(const d of iterMonthDays(year, month)){
+    if(isDayOpen(store, d)) c++;
   }
   return c;
 }
 
-/* -----------------------------
-   AutoPlan
------------------------------ */
-function autoplanMonth(year, month1) {
-  if (!state.employees.length) return "Keine Mitarbeiter vorhanden.";
+function targetMinutesMonth(store, empId, year, month){
+  const emp = store.employees.find(e=>e.id===empId);
+  if(!emp) return 0;
+  const od = openDaysInMonth(store, year, month);
+  return Math.round(emp.weekly_minutes * (od/7.0));
+}
 
-  const empIds = state.employees.map((e) => e.id);
+function statusCountsAsCredit(st){
+  return ["SCHLOSS","BUERGER","URLAUB","KRANK","AUSGL"].includes(st);
+}
+function statusIsWorking(st){
+  return ["SCHLOSS","BUERGER"].includes(st);
+}
 
-  // target shifts for month
-  const targetsMonthShifts = {};
-  for (const eid of empIds) {
-    const tm = targetMinutesMonth(eid, year, month1);
-    targetsMonthShifts[eid] = Math.round(tm / SHIFT_MINUTES);
+function calcEmployeeMonthStats(store, empId, year, month){
+  const soll = targetMinutesMonth(store, empId, year, month);
+  let ist = 0;
+  let sonntage = 0;
+  for(const d of iterMonthDays(year, month)){
+    const st = store.getStatus(isoDate(d), empId);
+    if(statusCountsAsCredit(st)) ist += SHIFT_MINUTES;
+    if(isSunday(d) && statusIsWorking(st)) sonntage += 1;
   }
+  return { soll, ist, diff: (ist - soll), sonntage };
+}
 
-  // "how far from target" using CREDIT shifts
-  function monthDeltaShifts(eid) {
-    const doneCredit = creditShiftsInMonth(eid, year, month1);
-    return doneCredit - (targetsMonthShifts[eid] || 0);
+function ampelColor(diffMinutes){
+  const ad = Math.abs(diffMinutes);
+  if(ad <= SHIFT_MINUTES) return AMPEL_GREEN;
+  if(ad <= 2*SHIFT_MINUTES) return AMPEL_YELLOW;
+  return AMPEL_RED;
+}
+
+/* ---------- Sunday fairness (2-month window) ---------- */
+function twoMonthWindow(year, month){
+  if(month % 2 === 1){
+    let y2 = year, m2 = month+1;
+    if(m2===13){ m2=1; y2++; }
+    return [[year,month],[y2,m2]];
+  }else{
+    let y1 = year, m1 = month-1;
+    if(m1===0){ m1=12; y1--; }
+    return [[y1,m1],[year,month]];
   }
+}
 
-  function isBlocked(dayISO, eid) {
-    const st = getStatus(dayISO, eid);
-    return (
-      st === STATUS.KRANK ||
-      st === STATUS.URLAUB ||
-      st === STATUS.AUSGL ||
-      st === STATUS.SCHLOSS ||
-      st === STATUS.BUERGER
-    );
+function sundaySlotsInMonth(year, month){
+  let slots = 0;
+  for(const d of iterMonthDays(year, month)){
+    if(isSunday(d)) slots += 2;
   }
+  return slots;
+}
 
-  function workingIds(dayISO) {
-    const w = [];
-    for (const eid of empIds) {
-      const st = getStatus(dayISO, eid);
-      if (statusIsWorking(st)) w.push(eid);
+function actualSundaysInMonth(store, empId, year, month){
+  let cnt = 0;
+  for(const d of iterMonthDays(year, month)){
+    if(isSunday(d)){
+      const st = store.getStatus(isoDate(d), empId);
+      if(statusIsWorking(st)) cnt++;
     }
-    return w;
+  }
+  return cnt;
+}
+
+function actualSundaysInWindow(store, empId, year, month){
+  const [[y1,m1],[y2,m2]] = twoMonthWindow(year, month);
+  return actualSundaysInMonth(store, empId, y1, m1) + actualSundaysInMonth(store, empId, y2, m2);
+}
+
+function expectedSundaysInWindow(store, empId, year, month){
+  const [[y1,m1],[y2,m2]] = twoMonthWindow(year, month);
+  const totalSlots = sundaySlotsInMonth(y1,m1) + sundaySlotsInMonth(y2,m2);
+  if(totalSlots<=0) return 0;
+  const sumWeights = store.employees.reduce((a,e)=>a+(e.weekly_minutes||0), 0) || 1;
+  const emp = store.employees.find(e=>e.id===empId);
+  if(!emp) return 0;
+  return totalSlots * (emp.weekly_minutes / sumWeights);
+}
+
+function hasSundayPreviousWeek(store, empId, d){
+  const prev = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  prev.setDate(prev.getDate()-7);
+  if(!isSunday(prev)) return false;
+  const st = store.getStatus(isoDate(prev), empId);
+  return statusIsWorking(st);
+}
+
+function hasSundayInSameWeek(store, empId, d){
+  const sun = weekSunday(d);
+  const st = store.getStatus(isoDate(sun), empId);
+  return statusIsWorking(st);
+}
+
+/* ---------- streaks / weekly ---------- */
+function workedOnDay(store, empId, d){
+  return statusIsWorking(store.getStatus(isoDate(d), empId));
+}
+
+function consecutiveWorkDaysBefore(store, empId, d){
+  let cnt = 0;
+  const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  cur.setDate(cur.getDate()-1);
+  while(true){
+    if(!isDayOpen(store, cur)) break;
+    if(workedOnDay(store, empId, cur)){
+      cnt++;
+      cur.setDate(cur.getDate()-1);
+      if(cnt>=10) break;
+    }else break;
+  }
+  return cnt;
+}
+
+function weekWorkCount(store, empId, d){
+  const key = isoWeekKey(d);
+  let cnt = 0;
+  // compute Monday of ISO-like week in local terms: (Mon..Sun)
+  const jsDay = d.getDay(); // Sun=0
+  const weekdayMon0 = (jsDay + 6) % 7; // Mon=0..Sun=6
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  start.setDate(start.getDate() - weekdayMon0);
+  for(let i=0;i<7;i++){
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i);
+    if(isoWeekKey(day)!==key) continue;
+    if(statusIsWorking(store.getStatus(isoDate(day), empId))) cnt++;
+  }
+  return cnt;
+}
+
+function targetShiftsWeek(weekly_minutes){
+  return Math.round((weekly_minutes||0) / SHIFT_MINUTES);
+}
+
+function creditShiftsInMonth(store, empId, year, month){
+  let c = 0;
+  for(const d of iterMonthDays(year, month)){
+    if(statusCountsAsCredit(store.getStatus(isoDate(d), empId))) c++;
+  }
+  return c;
+}
+
+/* ---------- AutoPlan logic ---------- */
+/*
+  Wichtige Regeln (wie bei dir):
+  - ergänzt nur NONE
+  - respektiert manuell + Krank/Urlaub/Ausgl
+  - Monatsziel nach Öffnungstagen
+  - Sonntage fair im 2-Monats-Fenster (gewichtete Stunden)
+  - keine Sonntage zwei Wochen подряд (wenn möglich)
+  - Dienstag-Preference nach Sonntag in Woche (nur Preference, nicht Gesetz)
+  - "Lieblingskandidaten" vermeiden (Streak-Penalty)
+  - Über Ziel: maximal +1 Schicht bevorzugt (A: erlauben +1)
+*/
+function autoplanMonth(store, year, month){
+  if(store.employees.length===0) return "Keine Mitarbeiter vorhanden.";
+
+  const empIds = store.employees.map(e=>e.id);
+
+  // targets in shifts for the month
+  const targetsMonthShifts = {};
+  for(const id of empIds){
+    const tm = targetMinutesMonth(store, id, year, month);
+    targetsMonthShifts[id] = Math.round(tm / SHIFT_MINUTES);
   }
 
-  // scoring
-  function scoreCandidate(eid, dateObj, isSun) {
-    const emp = state.employees.find((e) => e.id === eid);
+  function isBlocked(dayIso, empId){
+    const st = store.getStatus(dayIso, empId);
+    return ["KRANK","URLAUB","AUSGL","SCHLOSS","BUERGER"].includes(st);
+  }
+
+  function workingIds(dayIso){
+    const out = [];
+    for(const id of empIds){
+      if(statusIsWorking(store.getStatus(dayIso, id))) out.push(id);
+    }
+    return out;
+  }
+
+  function monthDeltaShifts(empId){
+    const doneCredit = creditShiftsInMonth(store, empId, year, month);
+    return doneCredit - (targetsMonthShifts[empId] || 0);
+  }
+
+  // hard-ish cap: allow overshoot only up to +1 shift (preference/penalty)
+  function overshootPenalty(delta){
+    // delta = done - target
+    if(delta <= 1) return 0;
+    return (delta - 1) * 800; // very strong penalty
+  }
+
+  function scoreCandidate(empId, d, isSun){
+    const emp = store.employees.find(e=>e.id===empId);
     const weekly = emp?.weekly_minutes || 0;
 
-    let s = 0.0;
+    const delta = monthDeltaShifts(empId); // negative => needs shifts
+    let s = 0;
 
-    const delta = monthDeltaShifts(eid); // >0 already above target
-    // fill those who are under target
-    s += (-delta) * 120.0;
+    // main: push toward target (underfilled favored)
+    s += (-delta) * 140;
 
-    // cap over target to +1 shift (soft but very strong)
-    if (delta > 1) {
-      s -= 5000.0 + (delta - 1) * 500.0;
-    } else if (delta === 1) {
-      s -= 80.0;
-    }
+    // penalize exceeding beyond +1 shift
+    s -= overshootPenalty(delta);
 
-    // Weekly balance (work-based)
+    // weekly balance
     const tw = targetShiftsWeek(weekly);
-    const ww = weekWorkCount(eid, dateObj);
-    if (ww > tw) s -= (ww - tw) * 60.0;
-    else s += (tw - ww) * 10.0;
+    const ww = weekWorkCount(store, empId, d);
+    if(ww > tw) s -= (ww - tw) * 70;
+    else s += (tw - ww) * 10;
 
-    // Avoid long streaks
-    const streak = consecutiveWorkDaysBefore(eid, dateObj);
-    if (streak >= 4) s -= 9999.0;
-    else if (streak === 3) s -= 400.0;
-    else if (streak === 2) s -= 120.0;
-    else if (streak === 1) s -= 40.0;
+    // streak control
+    const streak = consecutiveWorkDaysBefore(store, empId, d);
+    if(streak >= 4) s -= 9999;
+    else if(streak === 3) s -= 420;
+    else if(streak === 2) s -= 140;
+    else if(streak === 1) s -= 50;
 
-    // tiny bonus for 2-day blocks
-    if (streak === 1) s += 15.0;
+    // tiny bonus for 2-day blocks (less “Zickzack”), but not longer
+    if(streak === 1) s += 12;
 
-    // Tuesday penalty if had Sunday in same week
-    if (!isSun && isTuesday(dateObj) && hasSundayInSameWeek(eid, dateObj)) {
-      s -= 500.0;
+    // Tuesday preference if Sunday in same week
+    if(!isSun && isTuesday(d) && hasSundayInSameWeek(store, empId, d)){
+      s -= 220; // preference only
     }
 
-    if (isSun) {
-      if (hasSundayPreviousWeek(eid, dateObj)) s -= 9999.0;
+    if(isSun){
+      // no Sundays two weeks in a row
+      if(hasSundayPreviousWeek(store, empId, d)) s -= 9999;
 
-      const actual = actualSundaysInWindow(eid, year, month1);
-      const expected = expectedSundaysInWindow(eid, year, month1);
-      const deficit = expected - actual;
-      s += deficit * 250.0;
+      // fairness in 2-month window by weights
+      const actual = actualSundaysInWindow(store, empId, year, month);
+      const expected = expectedSundaysInWindow(store, empId, year, month);
+      const deficit = expected - actual; // >0 needs Sundays
+      s += deficit * 260;
 
-      if (delta >= 2) s -= 200.0;
+      // if already above target, reduce Sunday probability
+      if(delta >= 1) s -= 180;
     }
-
-    // deterministic tiny tie-break
-    s += (eid.charCodeAt(0) % 7) * 0.0001;
 
     return s;
   }
 
   let filled = 0;
 
-  for (const d of iterMonthDays(year, month1)) {
-    if (!isDayOpen(d)) continue;
+  for(const d of iterMonthDays(year, month)){
+    if(!isDayOpen(store, d)) continue;
 
-    const dayISO = isoDate(d);
+    const dayIso = isoDate(d);
     const needWorkers = isSunday(d) ? 2 : 5;
 
-    const existing = workingIds(dayISO);
+    const existing = workingIds(dayIso);
     const freeSlots = needWorkers - existing.length;
-    if (freeSlots <= 0) continue;
+    if(freeSlots <= 0) continue;
 
-    // candidates are strictly NONE only
     const candidates = [];
-    for (const eid of empIds) {
-      if (getStatus(dayISO, eid) !== STATUS.NONE) continue;
-      candidates.push(eid);
+    for(const empId of empIds){
+      const st = store.getStatus(dayIso, empId);
+      if(st !== "NONE") continue;
+      if(isBlocked(dayIso, empId)) continue;
+      candidates.push(empId);
     }
-    if (!candidates.length) continue;
 
-    const scored = [];
-    for (const eid of candidates) {
-      if (isBlocked(dayISO, eid)) continue;
-      const sc = scoreCandidate(eid, d, isSunday(d));
-      scored.push([sc, eid]);
-    }
-    if (!scored.length) continue;
+    if(candidates.length === 0) continue;
 
-    scored.sort((a, b) => b[0] - a[0]);
-    const pick = scored.slice(0, freeSlots).map((x) => x[1]);
+    const scored = candidates
+      .map(id => [scoreCandidate(id, d, isSunday(d)), id])
+      .filter(x => Number.isFinite(x[0]))
+      .sort((a,b)=> b[0]-a[0]);
 
-    for (const eid of pick) {
-      setStatus(dayISO, eid, STATUS.SCHLOSS);
-      filled += 1;
+    if(scored.length === 0) continue;
+
+    const picks = scored.slice(0, freeSlots).map(x=>x[1]);
+
+    for(const empId of picks){
+      store.setStatus(dayIso, empId, "SCHLOSS"); // AutoPlan setzt SCHLOSS
+      filled++;
     }
   }
 
-  return `AutoPlan für ${monthNameDE(year, month1)} abgeschlossen (nur leere Felder ergänzt, ${filled} Einträge).`;
+  return `AutoPlan für ${monthNameDE(year, month)} abgeschlossen (nur leere Felder ergänzt, ${filled} Einträge).`;
 }
 
-/* -----------------------------
-   UI bindings (FIXED for your HTML ids)
------------------------------ */
-const UI = {
-  // employees
-  empNameInput:
-    byId("empNameInput") ||
-    byId("nameInput") ||
-    byId("employeeName") ||
-    byId("empName"),
-  addEmpBtn: byId("addEmpBtn") || byId("btnAddEmp") || byId("addEmployee"),
-  empList: byId("empList") || byId("employeesList") || byId("employeeList"),
+/* ---------- UI State ---------- */
+const store = new DataStore();
 
-  // month navigation
-  prevMonthBtn: byId("prevMonthBtn") || byId("btnPrevMonth") || byId("btnPrev"),
-  nextMonthBtn: byId("nextMonthBtn") || byId("btnNextMonth") || byId("btnNext"),
-  monthLabel: byId("monthLabel") || byId("lblMonth") || byId("monthTitle"),
-  calendarGrid: byId("calendarGrid") || byId("calendar") || byId("calGrid"),
-
-  // status bar text
-  statusBar: byId("statusBar") || byId("statusLabel") || byId("statusText"),
-
-  // top buttons
-  btnMondayOpen: byId("btnMondayOpen") || byId("mondayOpenBtn"),
-  btnPlan: byId("btnPlan") || byId("btnShowPlan"),
-  btnAutoplan: byId("btnAutoplan") || byId("btnAutoPlan"),
-  btnRefresh: byId("btnRefresh") || byId("btnAktualisieren"),
-
-  btnExport: byId("btnExport") || byId("btnExportJSON"),
-  btnImport: byId("btnImport") || byId("btnImportJSON"),
-  fileImport: byId("fileImport") || byId("importFile") || byId("jsonFileInput"),
-
-  // modals (your ids)
-  planModal: byId("planModal"),
-  planText: byId("planText") || byId("planTextarea"),
-  planCloseX: byId("planCloseX") || byId("planModalCloseX") || byId("btnClosePlan"),
-  planCloseBtn:
-    byId("planCloseBtn") ||
-    byId("planModalCloseBtn") ||
-    byId("btnClosePlan2"),
-  planCopyBtn:
-    byId("planCopyBtn") || byId("planModalCopyBtn") || byId("btnCopyPlan"),
-
-  profileModal: byId("profileModal"),
-  profileCloseX: byId("profileCloseX") || byId("btnCloseProfile"),
-  profileCloseBtn: byId("profileCloseBtn") || byId("btnCloseProfile2"),
-};
-
-function warnMissingUI() {
-  const required = [
-    "empNameInput",
-    "addEmpBtn",
-    "empList",
-    "prevMonthBtn",
-    "nextMonthBtn",
-    "monthLabel",
-    "calendarGrid",
-    "btnPlan",
-    "btnAutoplan",
-    "btnRefresh",
-    "planModal",
-    "planText",
-  ];
-  const missing = required.filter((k) => !UI[k]);
-  if (missing.length) {
-    console.warn("Missing UI elements, check your HTML ids:", missing);
-  }
-}
-
-/* -----------------------------
-   Global state
------------------------------ */
-let state = loadState();
-let view = (() => {
-  const now = new Date();
-  return { year: now.getFullYear(), month1: now.getMonth() + 1 };
-})();
+let viewYear, viewMonth; // month: 1..12
 let selectedEmpId = null;
 
-/* -----------------------------
-   Modal handling (IRON SAFE)
------------------------------ */
-function hide(el) {
-  if (!el) return;
-  el.classList.add("hidden");
-  el.setAttribute("aria-hidden", "true");
-}
-function show(el) {
-  if (!el) return;
-  el.classList.remove("hidden");
-  el.setAttribute("aria-hidden", "false");
+function setStatusText(t){
+  document.getElementById("statusText").textContent = t;
 }
 
-function closePlanModal() {
-  hide(UI.planModal);
-}
+/* ---------- UI: Employees ---------- */
+function renderEmployees(){
+  const empList = document.getElementById("empList");
+  empList.innerHTML = "";
 
-function openPlanModal() {
-  if (!UI.planModal || !UI.planText) return;
-  UI.planText.value = buildMonthPlanText(view.year, view.month1);
-  show(UI.planModal);
-  try {
-    UI.planText.focus();
-  } catch (_) {}
-}
+  for(const emp of store.employees){
+    const row = document.createElement("div");
+    row.className = "empRow";
 
-function closeProfile() {
-  hide(UI.profileModal);
-}
+    const del = document.createElement("button");
+    del.className = "btn small";
+    del.textContent = "🗑";
+    del.onclick = () => {
+      if(confirm(`${emp.name} wirklich löschen?`)){
+        if(selectedEmpId === emp.id) selectedEmpId = null;
+        store.deleteEmployee(emp.id);
+        renderEmployees();
+        renderCalendar();
+        setStatusText("Gelöscht.");
+      }
+    };
 
-/* -----------------------------
-   Build month plan text
------------------------------ */
-function dayWorkers(dateObj) {
-  const out = [];
-  for (const emp of state.employees) {
-    const st = getStatus(isoDate(dateObj), emp.id);
-    if (st === STATUS.SCHLOSS || st === STATUS.BUERGER) out.push({ name: emp.name, st });
+    const nameBtn = document.createElement("button");
+    nameBtn.className = "empName" + (selectedEmpId === emp.id ? " selected" : "");
+    nameBtn.textContent = emp.name;
+    nameBtn.onclick = () => {
+      selectedEmpId = (selectedEmpId === emp.id) ? null : emp.id;
+      renderEmployees();
+      paintCalendarForSelected();
+      setStatusText(selectedEmpId ? `Ausgewählt: ${emp.name}` : "Auswahl aufgehoben.");
+    };
+
+    const ampel = document.createElement("div");
+    ampel.className = "ampelDot";
+    const {diff} = calcEmployeeMonthStats(store, emp.id, viewYear, viewMonth);
+    ampel.style.background = ampelColor(diff);
+
+    const prof = document.createElement("button");
+    prof.className = "btn small";
+    prof.textContent = "👤";
+    prof.onclick = () => openProfile(emp.id);
+
+    const clear = document.createElement("button");
+    clear.className = "btn small";
+    clear.textContent = "🧹";
+    clear.onclick = () => {
+      if(!confirm(`Nur SCHLOSS/BÜRGER für ${emp.name} im aktuellen Monat löschen?\n(Krank/Urlaub/Ausgl. bleiben erhalten)`)) return;
+      for(const d of iterMonthDays(viewYear, viewMonth)){
+        const di = isoDate(d);
+        const st = store.getStatus(di, emp.id);
+        if(st === "SCHLOSS" || st === "BUERGER"){
+          store.clearStatus(di, emp.id);
+        }
+      }
+      renderCalendar();
+      renderEmployees();
+      setStatusText("Monatliche Dienste gelöscht (S/B).");
+    };
+
+    row.append(del, nameBtn, ampel, prof, clear);
+    empList.appendChild(row);
   }
-  return out;
 }
 
-function buildMonthPlanText(year, month1) {
-  const wd = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+/* ---------- UI: Profile ---------- */
+let profileEmpId = null;
 
+function openProfile(empId){
+  profileEmpId = empId;
+  const emp = store.employees.find(e=>e.id===empId);
+  if(!emp) return;
+
+  const modal = document.getElementById("profileModal");
+  document.getElementById("profileTitle").textContent = `Mitarbeiterprofil – ${emp.name}`;
+
+  const {soll, ist, diff, sonntage} = calcEmployeeMonthStats(store, empId, viewYear, viewMonth);
+
+  const body = document.getElementById("profileBody");
+  body.innerHTML = `
+    <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+      <div style="width:18px;height:18px;border-radius:6px;border:1px solid rgba(0,0,0,.35); background:${ampelColor(diff)}"></div>
+      <div style="font-weight:800">${emp.name}</div>
+    </div>
+
+    <div><b>Wochenstunden:</b> ${minutesToHHMM(emp.weekly_minutes)} Std</div>
+    <div><b>Monatsziel (nach Öffnungstagen):</b> ${minutesToHHMM(soll)} Std</div>
+    <div><b>Gutschrift (Monat):</b> ${minutesToHHMM(ist)} Std</div>
+    <div><b>Abweichung:</b> ${minutesToHHMM(diff)} Std</div>
+    <div><b>Sonntage gearbeitet (Monat):</b> ${sonntage}</div>
+
+    <div style="margin-top:10px; color:#555; font-size:13px;">
+      Hinweis: Urlaub/Krank/Ausgleich zählt als voller Tag für Ampel/Saldo (wie in deiner Tkinter-Version).
+    </div>
+  `;
+
+  modal.classList.remove("hidden");
+}
+
+function closeProfile(){
+  document.getElementById("profileModal").classList.add("hidden");
+  profileEmpId = null;
+}
+
+/* ---------- UI: Month plan list ---------- */
+function buildMonthPlanText(year, month){
+  const wd = ["So","Mo","Di","Mi","Do","Fr","Sa"]; // JS order
   const lines = [];
-  for (const d of iterMonthDays(year, month1)) {
-    const iso = isoDate(d);
+  lines.push(`Monat: ${monthNameDE(year, month)}`);
+  lines.push(`Hinweis: Diese Ansicht zeigt nur die eingeteilten Dienste (S/B) als Tagesliste.`);
+  lines.push("");
 
-    if (isMonday(d) && !isMondayOpen(iso)) {
-      lines.push(
-        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): geschlossen`
-      );
+  for(const d of iterMonthDays(year, month)){
+    const iso = isoDate(d);
+    const isMonClosed = isMonday(d) && !store.isMondayOpen(iso);
+    if(isMonClosed){
+      const dd = pad2(d.getDate())+"."+pad2(d.getMonth()+1)+"."+d.getFullYear();
+      lines.push(`${dd} (${wd[d.getDay()]}): geschlossen`);
       continue;
     }
 
-    const workers = dayWorkers(d);
-    if (!workers.length) {
-      lines.push(`${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): —`);
-    } else {
-      const parts = workers.map((w) => `${w.name} (${w.st === STATUS.SCHLOSS ? "S" : "B"})`);
-      lines.push(
-        `${pad2(d.getDate())}.${pad2(month1)}.${year} (${wd[weekdayMon0(d)]}): ${parts.join(", ")}`
-      );
+    const workers = [];
+    for(const emp of store.employees){
+      const st = store.getStatus(iso, emp.id);
+      if(st === "SCHLOSS" || st === "BUERGER"){
+        workers.push(`${emp.name} (${st==="SCHLOSS" ? "S" : "B"})`);
+      }
     }
+    const dd = pad2(d.getDate())+"."+pad2(d.getMonth()+1)+"."+d.getFullYear();
+    lines.push(`${dd} (${wd[d.getDay()]}): ${workers.length ? workers.join(", ") : "—"}`);
   }
 
-  const header = [
-    `Monat: ${monthNameDE(year, month1)}`,
-    "Hinweis: Diese Ansicht zeigt nur die eingeteilten Dienste (S/B) als Tagesliste.",
-    "",
-  ];
-  return header.concat(lines).join("\n");
+  return lines.join("\n");
 }
 
-/* -----------------------------
-   Employees UI
------------------------------ */
-function renderEmployees() {
-  if (!UI.empList) return;
-  UI.empList.innerHTML = "";
+function openPlanModal(){
+  const modal = document.getElementById("planModal");
+  document.getElementById("planTitle").textContent = `Plan anzeigen – ${monthNameDE(viewYear, viewMonth)}`;
+  const text = buildMonthPlanText(viewYear, viewMonth);
+  const ta = document.getElementById("planText");
+  ta.value = text;
+  modal.classList.remove("hidden");
+}
 
-  for (const emp of state.employees) {
-    const row = document.createElement("div");
-    row.className = "emp-row";
+function closePlanModal(){
+  document.getElementById("planModal").classList.add("hidden");
+}
 
-    const btnTrash = document.createElement("button");
-    btnTrash.className = "emp-trash";
-    btnTrash.textContent = "🗑";
-    btnTrash.title = "Löschen";
-    btnTrash.onclick = () => deleteEmployee(emp.id);
-
-    const btnName = document.createElement("button");
-    btnName.className = "emp-name";
-    btnName.textContent = emp.name;
-    btnName.onclick = () => toggleSelectEmployee(emp.id);
-
-    if (selectedEmpId === emp.id) btnName.classList.add("selected");
-
-    const ampel = document.createElement("span");
-    ampel.className = "emp-ampel";
-    const stats = calcEmployeeMonthStats(emp.id, view.year, view.month1);
-    ampel.style.background = ampelColor(stats.diff);
-    ampel.title = `Soll: ${minutesToHHMM(stats.soll)} | Ist: ${minutesToHHMM(stats.ist)} | Diff: ${minutesToHHMM(stats.diff)} | So: ${stats.sonntage}`;
-
-    row.appendChild(btnTrash);
-    row.appendChild(btnName);
-    row.appendChild(ampel);
-
-    UI.empList.appendChild(row);
+/* ---------- UI: Calendar ---------- */
+function renderWeekHeader(){
+  const header = document.getElementById("weekHeader");
+  header.innerHTML = "";
+  const names = ["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+  for(const n of names){
+    const div = document.createElement("div");
+    div.className = "wh";
+    div.textContent = n;
+    header.appendChild(div);
   }
 }
 
-function toggleSelectEmployee(empId) {
-  selectedEmpId = selectedEmpId === empId ? null : empId;
-  renderEmployees();
-  renderCalendar();
-  setStatusText(selectedEmpId ? "Mitarbeiter ausgewählt." : "Kein Mitarbeiter ausgewählt.");
+function monthDatesCalendar(year, month){
+  // returns array of weeks, each week array of 7 Date objects (Mon..Sun), including prev/next month days
+  const first = new Date(year, month-1, 1);
+  const firstJs = first.getDay(); // Sun=0
+  const firstMon0 = (firstJs + 6) % 7; // Mon=0
+  const start = new Date(year, month-1, 1);
+  start.setDate(start.getDate() - firstMon0);
+
+  const lastDay = daysInMonth(year, month);
+  const last = new Date(year, month-1, lastDay);
+  const lastJs = last.getDay();
+  const lastMon0 = (lastJs + 6) % 7;
+  const end = new Date(year, month-1, lastDay);
+  end.setDate(end.getDate() + (6 - lastMon0));
+
+  const weeks = [];
+  let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while(cur <= end){
+    const week = [];
+    for(let i=0;i<7;i++){
+      week.push(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate()));
+      cur.setDate(cur.getDate()+1);
+    }
+    weeks.push(week);
+  }
+  return weeks;
 }
 
-function addEmployee() {
-  const name = (UI.empNameInput?.value || "").trim();
-  if (!name) {
-    setStatusText("Bitte Name eingeben.");
-    return;
-  }
+let calendarCells = new Map(); // dayIso -> {cellEl, dateObj, btns}
 
-  const raw = prompt("Wochenstunden (z.B. 20:00 oder 29:15):", "20:00");
-  if (raw === null) return;
+function renderCalendar(){
+  document.getElementById("monthTitle").textContent = monthNameDE(viewYear, viewMonth);
+  renderWeekHeader();
 
-  const weekly = parseWeekly(raw);
-  if (weekly == null) {
-    alert("Format bitte wie 20:00 oder 29:15 (Minuten 00/15/30/45).");
-    return;
-  }
+  const grid = document.getElementById("calendarGrid");
+  grid.innerHTML = "";
+  calendarCells.clear();
 
-  const id = makeId(name);
-  state.employees.push({ id, name, weekly_minutes: weekly });
-  saveState();
+  const weeks = monthDatesCalendar(viewYear, viewMonth);
 
-  UI.empNameInput.value = "";
-  renderEmployees();
-  renderCalendar();
-  setStatusText("Gespeichert.");
-}
-
-function parseWeekly(s) {
-  const m = String(s).trim().match(/^(\d{1,2})\s*:\s*(\d{2})$/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (![0, 15, 30, 45].includes(mi)) return null;
-  return h * 60 + mi;
-}
-
-function deleteEmployee(empId) {
-  const emp = state.employees.find((e) => e.id === empId);
-  if (!emp) return;
-  if (!confirm(`${emp.name} wirklich löschen?`)) return;
-
-  state.employees = state.employees.filter((e) => e.id !== empId);
-  for (const dayISO of Object.keys(state.plan.day_entries || {})) {
-    const mapping = state.plan.day_entries[dayISO];
-    if (mapping && mapping[empId]) delete mapping[empId];
-    if (mapping && Object.keys(mapping).length === 0) delete state.plan.day_entries[dayISO];
-  }
-  saveState();
-
-  if (selectedEmpId === empId) selectedEmpId = null;
-  renderEmployees();
-  renderCalendar();
-  setStatusText("Gelöscht.");
-}
-
-/* -----------------------------
-   Calendar UI
------------------------------ */
-function renderCalendar() {
-  if (!UI.calendarGrid || !UI.monthLabel) return;
-
-  UI.monthLabel.textContent = monthNameDE(view.year, view.month1);
-  UI.calendarGrid.innerHTML = "";
-
-  const weeks = monthDatesCalendar(view.year, view.month1);
-
-  const header = document.createElement("div");
-  header.className = "cal-header";
-  const headersFull = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-  for (const h of headersFull) {
-    const cell = document.createElement("div");
-    cell.className = "cal-header-cell";
-    cell.textContent = h;
-    header.appendChild(cell);
-  }
-  UI.calendarGrid.appendChild(header);
-
-  const grid = document.createElement("div");
-  grid.className = "cal-grid-body";
-  UI.calendarGrid.appendChild(grid);
-
-  for (const week of weeks) {
-    const row = document.createElement("div");
-    row.className = "cal-row";
-
-    for (const d of week) {
-      const dayISO = isoDate(d);
-      const inMonth = d.getMonth() === (view.month1 - 1);
+  for(const week of weeks){
+    for(const d of week){
+      const dayIso = isoDate(d);
 
       const cell = document.createElement("div");
-      cell.className = "cal-cell";
-      if (!inMonth) cell.classList.add("other-month");
+      cell.className = "dayCell";
 
       const top = document.createElement("div");
-      top.className = "cal-top";
+      top.className = "dayTop";
 
       const dayNum = document.createElement("div");
-      dayNum.className = "cal-daynum";
-      dayNum.textContent = d.getDate();
+      dayNum.className = "dayNum";
+      dayNum.textContent = String(d.getDate());
 
-      const soMark = document.createElement("div");
-      soMark.className = "cal-sunday-mark";
-      soMark.textContent = isSunday(d) ? "So" : "";
+      const hint = document.createElement("div");
+      hint.className = "dayHint";
+      hint.textContent = isSunday(d) ? "So" : "";
 
-      top.appendChild(dayNum);
-      top.appendChild(soMark);
+      top.append(dayNum, hint);
 
-      const btns = document.createElement("div");
-      btns.className = "cal-btns";
+      const btnGrid = document.createElement("div");
+      btnGrid.className = "btnGrid";
 
-      const b1 = mkDayBtn("Schloss", () => setDayStatus(d, STATUS.SCHLOSS));
-      const b2 = mkDayBtn("Bürger", () => setDayStatus(d, STATUS.BUERGER));
-      const b3 = mkDayBtn("Krank", () => setDayStatus(d, STATUS.KRANK));
-      const b4 = mkDayBtn("Urlaub", () => setDayStatus(d, STATUS.URLAUB));
-      const b5 = mkDayBtn("Ausgl.", () => setDayStatus(d, STATUS.AUSGL));
+      const mk = (label, status) => {
+        const b = document.createElement("button");
+        b.className = "sbtn";
+        b.textContent = label;
+        b.onclick = () => setDayStatus(d, status);
+        return b;
+      };
 
-      btns.appendChild(b1);
-      btns.appendChild(b2);
-      btns.appendChild(b3);
-      btns.appendChild(b4);
-      btns.appendChild(b5);
+      const b1 = mk("Schloss","SCHLOSS");
+      const b2 = mk("Bürger","BUERGER");
+      const b3 = mk("Krank","KRANK");
+      const b4 = mk("Urlaub","URLAUB");
+      const b5 = mk("Ausgl.","AUSGL");
+      const empty = document.createElement("div");
+      empty.className = "sbtn empty";
+      empty.textContent = ".";
 
-      if (isMonday(d) && !isMondayOpen(dayISO)) {
-        cell.classList.add("monday-closed");
+      btnGrid.append(b1,b2,b3,b4,b5,empty);
+
+      cell.append(top, btnGrid);
+
+      // style: dim Mondays if closed
+      if(isMonday(d) && !store.isMondayOpen(dayIso)){
+        dayNum.style.color = "#666";
       }
 
-      cell.appendChild(top);
-      cell.appendChild(btns);
-
-      if (selectedEmpId && inMonth) {
-        const st = getStatus(dayISO, selectedEmpId);
-        paintCellByStatus(cell, st);
+      // style: out-of-month days faded
+      if(d.getMonth() !== (viewMonth-1)){
+        cell.style.opacity = "0.50";
       }
 
-      row.appendChild(cell);
+      grid.appendChild(cell);
+      calendarCells.set(dayIso, {cellEl:cell, dateObj:d, btns:[b1,b2,b3,b4,b5], dayNumEl:dayNum});
     }
+  }
 
-    grid.appendChild(row);
+  paintCalendarForSelected();
+}
+
+/* paint selected employee statuses */
+function paintCalendarForSelected(){
+  // reset
+  for(const [iso, obj] of calendarCells.entries()){
+    const {cellEl, btns, dayNumEl, dateObj} = obj;
+    cellEl.style.background = "#fff";
+    dayNumEl.style.color = "#111";
+    btns.forEach(b=>{
+      b.style.background = "#F1F1F1";
+      b.style.color = "#111";
+    });
+
+    if(isMonday(dateObj) && !store.isMondayOpen(iso)){
+      dayNumEl.style.color = "#666";
+    }
+  }
+
+  if(!selectedEmpId) return;
+
+  for(const [iso, obj] of calendarCells.entries()){
+    const {cellEl, btns, dayNumEl} = obj;
+    const st = store.getStatus(iso, selectedEmpId);
+    let color = null;
+    if(st === "SCHLOSS") color = BORDEAUX;
+    else if(st === "BUERGER") color = MOOS_GREEN;
+    else if(st === "KRANK") color = KRANK_RED;
+    else if(st === "URLAUB") color = URLAUB_BLUE;
+    else if(st === "AUSGL") color = AUSGL_GRAY;
+
+    if(color){
+      cellEl.style.background = color;
+      dayNumEl.style.color = "#fff";
+      btns.forEach(b=>{
+        b.style.background = color;
+        b.style.color = "#fff";
+      });
+    }
   }
 }
 
-function mkDayBtn(label, onClick) {
-  const b = document.createElement("button");
-  b.className = "day-btn";
-  b.textContent = label;
-  b.onclick = onClick;
-  return b;
-}
-
-function paintCellByStatus(cell, st) {
-  cell.style.setProperty("--cellColor", "");
-
-  if (st === STATUS.SCHLOSS) cell.style.setProperty("--cellColor", COLORS.BORDEAUX);
-  else if (st === STATUS.BUERGER) cell.style.setProperty("--cellColor", COLORS.MOOS_GREEN);
-  else if (st === STATUS.KRANK) cell.style.setProperty("--cellColor", COLORS.KRANK_RED);
-  else if (st === STATUS.URLAUB) cell.style.setProperty("--cellColor", COLORS.URLAUB_BLUE);
-  else if (st === STATUS.AUSGL) cell.style.setProperty("--cellColor", COLORS.AUSGL_GRAY);
-
-  if (st !== STATUS.NONE) {
-    const col = cell.style.getPropertyValue("--cellColor");
-    cell.style.background = col;
-    cell.style.color = "#fff";
-  } else {
-    cell.style.background = "";
-    cell.style.color = "";
-  }
-}
-
-function setDayStatus(dateObj, status) {
-  if (!selectedEmpId) {
+function setDayStatus(dateObj, status){
+  if(!selectedEmpId){
     setStatusText("Bitte zuerst einen Mitarbeiter auswählen.");
     return;
   }
 
-  const dayISO = isoDate(dateObj);
+  const dayIso = isoDate(dateObj);
 
-  if (isMonday(dateObj) && !isMondayOpen(dayISO)) {
+  if(isMonday(dateObj) && !store.isMondayOpen(dayIso)){
     setStatusText("Montag ist geschlossen (Ausnahme über „Montag öffnen…“).");
     return;
   }
 
-  const current = getStatus(dayISO, selectedEmpId);
-  if (current === status) clearStatus(dayISO, selectedEmpId);
-  else setStatus(dayISO, selectedEmpId, status);
+  const current = store.getStatus(dayIso, selectedEmpId);
+  if(current === status){
+    store.clearStatus(dayIso, selectedEmpId);
+  }else{
+    store.setStatus(dayIso, selectedEmpId, status);
+  }
 
-  renderCalendar();
-  renderEmployees();
+  paintCalendarForSelected();
+  renderEmployees(); // refresh ampel
   setStatusText("Geändert.");
 }
 
-/* -----------------------------
-   Month navigation
------------------------------ */
-function prevMonth() {
-  let y = view.year;
-  let m = view.month1 - 1;
-  if (m === 0) {
-    m = 12;
-    y -= 1;
-  }
-  view.year = y;
-  view.month1 = m;
-  renderEmployees();
-  renderCalendar();
-}
-
-function nextMonth() {
-  let y = view.year;
-  let m = view.month1 + 1;
-  if (m === 13) {
-    m = 1;
-    y += 1;
-  }
-  view.year = y;
-  view.month1 = m;
-  renderEmployees();
-  renderCalendar();
-}
-
-/* -----------------------------
-   Monday open dialog
------------------------------ */
-function mondayOpenPrompt() {
-  const s = prompt("Montag öffnen – Datum eingeben (TT.MM.JJJJ):", "");
-  if (s === null) return;
-
-  const m = String(s).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!m) {
-    alert("Bitte Format TT.MM.JJJJ");
+/* ---------- Actions ---------- */
+function runAutoPlan(){
+  if(store.employees.length===0){
+    alert("Keine Mitarbeiter vorhanden.");
     return;
   }
 
-  const dd = Number(m[1]);
-  const mm = Number(m[2]);
-  const yy = Number(m[3]);
+  const msg =
+`AutoPlan für ${monthNameDE(viewYear, viewMonth)} starten?
 
-  const d = new Date(yy, mm - 1, dd);
-  if (Number.isNaN(d.getTime())) {
-    alert("Ungültiges Datum.");
-    return;
-  }
-  if (!isMonday(d)) {
-    alert("Dieses Datum ist kein Montag.");
-    return;
-  }
+Regeln:
+- Ergänzt nur leere Felder (NONE)
+- Respektiert manuelle Einträge und Krank/Urlaub/Ausgl.
+- Monatsziel nach Öffnungstagen (nicht ×4)
+- Sonntage fair im 2-Monats-Fenster, nach Stunden gewichtet
+- Keine Sonntage zwei Wochen подряд (wenn möglich)
+- Wenn Sonntag in der Woche: Dienstag möglichst frei (Preference)
+- Schutz gegen Lieblingskandidaten: Strafpunkte für Serien/Wiederholungen
+- Überschreiten der Ziel-Schichten nur bis +1 (starker Malus danach)
+- AutoPlan setzt immer SCHLOSS (Bürger bleibt manuell)
+- 5 Personen Di–Sa, 2 Personen So, Montag nur wenn geöffnet`;
 
-  const iso = isoDate(d);
-  if (isMondayOpen(iso)) {
-    if (confirm("Montag ist bereits geöffnet. Entfernen?")) {
-      removeMondayOpen(iso);
-    }
-  } else {
-    addMondayOpen(iso);
-  }
+  if(!confirm(msg)) return;
 
-  renderEmployees();
+  const res = autoplanMonth(store, viewYear, viewMonth);
   renderCalendar();
-  setStatusText("Montag-Öffnung aktualisiert.");
+  renderEmployees();
+  setStatusText(res);
+  alert(res);
 }
 
-/* -----------------------------
-   Export / Import JSON
------------------------------ */
-function exportJSON() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+function mondayOpenDialog(){
+  const input = prompt("Montag öffnen: Datum (TT.MM.JJJJ) eingeben.\n\nTipp: nochmal öffnen/löschen über Export/Import oder per wiederholtem Aufruf (siehe Liste im JSON).");
+  if(!input) return;
+  const d = parseDEDate(input);
+  if(!d){ alert("Bitte Datum im Format TT.MM.JJJJ eingeben."); return; }
+  if(d.getDay() !== 1){ alert("Dieses Datum ist kein Montag."); return; }
+  store.addMondayOpen(isoDate(d));
+  renderCalendar();
+  setStatusText("Montag geöffnet.");
+}
+
+function exportJSON(){
+  const payload = { employees: store.employees, plan: store.plan };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = "dienstplan_export.json";
   document.body.appendChild(a);
   a.click();
   a.remove();
-
   URL.revokeObjectURL(url);
   setStatusText("Export erstellt.");
 }
 
-function importJSONFromFile(file) {
+function importJSONFile(file){
   const reader = new FileReader();
   reader.onload = () => {
-    try {
+    try{
       const obj = JSON.parse(String(reader.result || ""));
-      if (!obj || typeof obj !== "object") throw new Error("Bad JSON");
+      if(!obj || typeof obj !== "object") throw new Error("bad");
+      if(!Array.isArray(obj.employees)) throw new Error("employees missing");
+      if(!obj.plan || typeof obj.plan !== "object") throw new Error("plan missing");
 
-      obj.employees ||= [];
-      obj.plan ||= { day_entries: {}, monday_open: [] };
-      obj.plan.day_entries ||= {};
-      obj.plan.monday_open ||= [];
+      localStorage.setItem(LS_KEY, JSON.stringify({employees: obj.employees, plan: obj.plan}, null, 2));
+      store.load();
 
-      state = obj;
-      saveState();
+      // keep selection if possible
+      if(selectedEmpId && !store.employees.some(e=>e.id===selectedEmpId)){
+        selectedEmpId = null;
+      }
 
-      selectedEmpId = null;
       renderEmployees();
       renderCalendar();
-      setStatusText("Import OK.");
-      alert("Import OK.");
-    } catch (e) {
-      console.error(e);
-      alert("Import fehlgeschlagen: Datei ist kein gültiger Dienstplan-Export.");
+      setStatusText("Import erfolgreich.");
+      alert("Import erfolgreich.");
+    }catch(e){
+      alert("Import fehlgeschlagen: JSON ist ungültig oder hat falsche Struktur.");
     }
   };
-  reader.readAsText(file);
+  reader.readAsText(file, "utf-8");
 }
 
-/* -----------------------------
-   Status bar
------------------------------ */
-function setStatusText(s) {
-  if (UI.statusBar) UI.statusBar.textContent = s;
+/* ---------- Hours dialogs ---------- */
+function askWeeklyMinutes(initial){
+  // initial in minutes. Let user enter hours + minutes (0/15/30/45).
+  const h0 = Math.max(0, Math.floor(initial/60));
+  const m0 = initial % 60;
+  const hStr = prompt("Wochenstunden – Stunden (Zahl):", String(h0));
+  if(hStr === null) return null;
+  const h = Number(hStr);
+  if(!Number.isFinite(h) || h < 0 || h > 60) { alert("Ungültige Stunden."); return null; }
+
+  const mStr = prompt("Wochenstunden – Minuten (0,15,30,45):", String([0,15,30,45].includes(m0)?m0:0));
+  if(mStr === null) return null;
+  const m = Number(mStr);
+  if(![0,15,30,45].includes(m)) { alert("Minuten müssen 0, 15, 30 oder 45 sein."); return null; }
+
+  return h*60 + m;
 }
 
-/* -----------------------------
-   Init – prevent stuck modal
------------------------------ */
-function initModalsIronSafe() {
-  // force-hide on startup
-  hide(UI.planModal);
-  hide(UI.profileModal);
-
-  // Plan close controls
-  safeOn(UI.planCloseX, "click", closePlanModal);
-  safeOn(UI.planCloseBtn, "click", closePlanModal);
-
-  // click overlay closes
-  safeOn(UI.planModal, "click", (e) => {
-    if (e.target === UI.planModal) closePlanModal();
-  });
-
-  // copy
-  safeOn(UI.planCopyBtn, "click", () => {
-    if (!UI.planText) return;
-    UI.planText.select();
-    document.execCommand("copy");
-    setStatusText("Plan in Zwischenablage kopiert.");
-  });
-
-  // Profile close controls
-  safeOn(UI.profileCloseX, "click", closeProfile);
-  safeOn(UI.profileCloseBtn, "click", closeProfile);
-
-  safeOn(UI.profileModal, "click", (e) => {
-    if (e.target === UI.profileModal) closeProfile();
-  });
-
-  // ESC closes any open modal
-  safeOn(document, "keydown", (e) => {
-    if (e.key === "Escape") {
-      closePlanModal();
-      closeProfile();
-    }
-  });
+function openChangeHoursForProfile(){
+  if(!profileEmpId) return;
+  const emp = store.employees.find(e=>e.id===profileEmpId);
+  if(!emp) return;
+  const v = askWeeklyMinutes(emp.weekly_minutes);
+  if(v === null) return;
+  store.updateEmployeeHours(emp.id, v);
+  openProfile(emp.id); // re-render modal
+  renderEmployees();
+  setStatusText("Stunden geändert.");
 }
 
-function initUI() {
-  safeOn(UI.addEmpBtn, "click", addEmployee);
+/* ---------- Init ---------- */
+function init(){
+  const today = new Date();
+  viewYear = today.getFullYear();
+  viewMonth = today.getMonth()+1;
 
-  safeOn(UI.empNameInput, "keydown", (e) => {
-    if (e.key === "Enter") addEmployee();
-  });
-
-  safeOn(UI.prevMonthBtn, "click", prevMonth);
-  safeOn(UI.nextMonthBtn, "click", nextMonth);
-
-  safeOn(UI.btnPlan, "click", openPlanModal);
-
-  safeOn(UI.btnAutoplan, "click", () => {
-    const ok = confirm(
-      `AutoPlan für ${monthNameDE(view.year, view.month1)} starten?\n\n` +
-        "Regeln:\n" +
-        "- Ergänzt nur leere Felder (NONE)\n" +
-        "- Respektiert manuelle Einträge und Krank/Urlaub/Ausgl.\n" +
-        "- Monatsziel nach Öffnungstagen (nicht ×4)\n" +
-        "- Sonntage fair im 2-Monats-Fenster (nach Stunden)\n" +
-        "- Keine Sonntage zwei Wochen in Folge (wenn möglich)\n" +
-        "- Dienstag nach Sonntag in derselben Woche wird gemieden\n" +
-        "- Keine Lieblingskandidaten: Strafpunkte für Serien\n" +
-        "- Ziel: möglichst grün/gelb\n" +
-        "- Überschreiten des Ziels > +1 Schicht wird hart bestraft\n" +
-        "- AutoPlan setzt SCHLOSS\n"
-    );
-    if (!ok) return;
-
-    const res = autoplanMonth(view.year, view.month1);
+  document.getElementById("btnPrev").onclick = () => {
+    viewMonth--;
+    if(viewMonth===0){ viewMonth=12; viewYear--; }
     renderEmployees();
     renderCalendar();
-    setStatusText(res);
-    alert(res);
-  });
-
-  safeOn(UI.btnRefresh, "click", () => {
+    setStatusText("Monat gewechselt.");
+  };
+  document.getElementById("btnNext").onclick = () => {
+    viewMonth++;
+    if(viewMonth===13){ viewMonth=1; viewYear++; }
     renderEmployees();
     renderCalendar();
+    setStatusText("Monat gewechselt.");
+  };
+
+  document.getElementById("btnRefresh").onclick = () => {
+    renderEmployees();
+    paintCalendarForSelected();
     setStatusText("Aktualisiert.");
-  });
+  };
 
-  safeOn(UI.btnMondayOpen, "click", mondayOpenPrompt);
+  document.getElementById("btnAutoPlan").onclick = runAutoPlan;
+  document.getElementById("btnShowPlan").onclick = openPlanModal;
 
-  safeOn(UI.btnExport, "click", exportJSON);
+  document.getElementById("btnMondayOpen").onclick = mondayOpenDialog;
 
-  safeOn(UI.btnImport, "click", () => {
-    if (UI.fileImport) UI.fileImport.click();
-    else alert("Import: file input not found (id fileImport).");
-  });
-
-  safeOn(UI.fileImport, "change", (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    importJSONFromFile(file);
+  document.getElementById("btnExport").onclick = exportJSON;
+  document.getElementById("btnImport").onclick = () => document.getElementById("fileImport").click();
+  document.getElementById("fileImport").addEventListener("change", (e)=>{
+    const f = e.target.files?.[0];
+    if(f) importJSONFile(f);
     e.target.value = "";
   });
-}
 
-function init() {
-  warnMissingUI();
-  initModalsIronSafe();
-  initUI();
+  // employee add
+  document.getElementById("btnAddEmp").onclick = () => {
+    const name = (document.getElementById("empName").value || "").trim();
+    if(!name){ alert("Bitte Name eingeben."); return; }
+    const weekly = askWeeklyMinutes(20*60);
+    if(weekly === null) return;
+    store.addEmployee(name, weekly);
+    document.getElementById("empName").value = "";
+    renderEmployees();
+    renderCalendar();
+    setStatusText("Gespeichert.");
+  };
+
+  // modals
+  document.getElementById("btnCloseProfile").onclick = closeProfile;
+  document.getElementById("btnCloseProfile2").onclick = closeProfile;
+  document.getElementById("btnChangeHours").onclick = openChangeHoursForProfile;
+
+  document.getElementById("btnClosePlan").onclick = closePlanModal;
+  document.getElementById("btnClosePlan2").onclick = closePlanModal;
+  document.getElementById("btnCopyPlan").onclick = () => {
+    const ta = document.getElementById("planText");
+    ta.select();
+    document.execCommand("copy");
+    setStatusText("Plan kopiert.");
+    alert("Der Monatsplan wurde in die Zwischenablage kopiert.");
+  };
+
+  // initial render
   renderEmployees();
   renderCalendar();
   setStatusText("Bereit.");
 }
 
-/* -----------------------------
-   Start (after DOM ready)
------------------------------ */
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
-}
+init();
