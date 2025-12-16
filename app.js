@@ -42,7 +42,7 @@ const LS_KEY = "dienstplan_museum_v1";
 //* =========================
    PIN lock (visual only)
    ========================= */
-const PIN_CODE = "2580"; // <-- поменяй на свой PIN
+const PIN_CODE = "201703"; // <-- поменяй на свой PIN
 const PIN_SESSION_KEY = "dienstplan_pin_ok";
 
 function initPinLock() {
