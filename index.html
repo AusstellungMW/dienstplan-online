@@ -7,6 +7,26 @@
   <link rel="stylesheet" href="style.css?v=3" />
 
 </head>
+  <!-- PIN LOCK (visual only) -->
+<div class="pinOverlay" id="pinOverlay">
+  <div class="pinBox">
+    <div class="pinTitle">202512</div>
+    <div class="pinDots" id="pinDots">
+      <span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="pinPad" id="pinPad"></div>
+
+    <div class="pinRow">
+      <button class="btn small" id="pinClear">Löschen</button>
+      <div class="spacer"></div>
+      <button class="btn" id="pinOk">OK</button>
+    </div>
+
+    <div class="pinHint" id="pinHint"></div>
+  </div>
+</div>
+
 <body>
   <div class="app">
     <header class="topbar">
