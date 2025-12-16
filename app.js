@@ -39,7 +39,118 @@ const COLORS = {
 
 const LS_KEY = "dienstplan_museum_v1";
 
-/* -----------------------------
+//* =========================
+   PIN lock (visual only)
+   ========================= */
+const PIN_CODE = "2580"; // <-- поменяй на свой PIN
+const PIN_SESSION_KEY = "dienstplan_pin_ok";
+
+function initPinLock() {
+  const overlay = document.getElementById("pinOverlay");
+  if (!overlay) return;
+
+  // already unlocked this tab?
+  if (sessionStorage.getItem(PIN_SESSION_KEY) === "1") {
+    overlay.classList.add("hidden");
+    overlay.style.display = "none";
+    return;
+  }
+
+  const dots = Array.from(document.querySelectorAll("#pinDots span"));
+  const pad = document.getElementById("pinPad");
+  const hint = document.getElementById("pinHint");
+  const btnClear = document.getElementById("pinClear");
+  const btnOk = document.getElementById("pinOk");
+
+  let entered = "";
+
+  function redraw() {
+    dots.forEach((d, i) => d.classList.toggle("filled", i < entered.length));
+  }
+
+  function fail(msg) {
+    hint.textContent = msg;
+    overlay.animate(
+      [{ transform: "translateX(0)" }, { transform: "translateX(-8px)" }, { transform: "translateX(8px)" }, { transform: "translateX(0)" }],
+      { duration: 220 }
+    );
+  }
+
+  function unlock() {
+    sessionStorage.setItem(PIN_SESSION_KEY, "1");
+    overlay.classList.add("hidden");
+    overlay.style.display = "none";
+  }
+
+  // build keypad
+  pad.innerHTML = "";
+  const keys = ["1","2","3","4","5","6","7","8","9","⌫","0","↵"];
+  keys.forEach((k) => {
+    const b = document.createElement("button");
+    b.className = "pinKey";
+    b.type = "button";
+    b.textContent = k;
+    b.onclick = () => {
+      hint.textContent = "";
+      if (k === "⌫") {
+        entered = entered.slice(0, -1);
+        redraw();
+        return;
+      }
+      if (k === "↵") {
+        if (entered.length !== PIN_CODE.length) return fail("PIN unvollständig.");
+        if (entered === PIN_CODE) return unlock();
+        entered = "";
+        redraw();
+        return fail("Falscher PIN.");
+      }
+      if (entered.length >= PIN_CODE.length) return;
+      entered += k;
+      redraw();
+    };
+    pad.appendChild(b);
+  });
+
+  btnClear?.addEventListener("click", () => {
+    entered = "";
+    hint.textContent = "";
+    redraw();
+  });
+
+  btnOk?.addEventListener("click", () => {
+    if (entered.length !== PIN_CODE.length) return fail("PIN unvollständig.");
+    if (entered === PIN_CODE) return unlock();
+    entered = "";
+    redraw();
+    fail("Falscher PIN.");
+  });
+
+  // show overlay
+  overlay.classList.remove("hidden");
+  overlay.style.display = "flex";
+  redraw();
+
+  // keyboard support
+  document.addEventListener("keydown", (e) => {
+    if (overlay.style.display === "none") return;
+    if (/^[0-9]$/.test(e.key)) {
+      if (entered.length < PIN_CODE.length) entered += e.key;
+      hint.textContent = "";
+      redraw();
+    } else if (e.key === "Backspace") {
+      entered = entered.slice(0, -1);
+      redraw();
+    } else if (e.key === "Enter") {
+      if (entered === PIN_CODE) unlock();
+      else {
+        entered = "";
+        redraw();
+        fail("Falscher PIN.");
+      }
+    }
+  });
+}
+* -----------------------------
    DOM helpers
 ----------------------------- */
 const $ = (sel) => document.querySelector(sel);
@@ -1068,6 +1179,7 @@ function initUI() {
 }
 
 function init() {
+  initPinLock();
   initModalsIronSafe();
   initUI();
   renderEmployees();
